@@ -1,0 +1,275 @@
+<template>
+  <div style="height: 100%">
+    <div v-for="modal in modals" :key="modal.id">
+      <dialog :open="modal.show" class="dialog" :class="modalClass(modal)" :width="modalWidth(modal)" persistent
+        :hide-header-close="!modal.closable" :hide-overlay="modal.noModal" :no-click-animation="modal.noModal"
+        :retain-focus="modal.retainFocus" @hide="handleHide(modal)" @keydown.enter="handleConfirm(modal)"
+        @keydown.esc="handleCancel(modal)">
+        <loader :options="{ transparent: true, global: false }" indicator="circle" :visible="modal.loading" />
+
+        <div class="card"
+          :class="[{ 'promt-card': !isSelectDialog(modal) && !isCreateEditDialog(modal) }, cardClass(modal)]">
+          <div class="modal-title body-2 font-weight-bold pb-0" :class="titleCssClasses(modal)">
+            <span>{{ modal.title }}</span>
+
+            <div class="spacer"></div>
+
+            <i class="material-icons" :class="{ 'grey--text lighten-8': modal.darkTitle }" style="cursor: pointer"
+              v-if="modal.closable || isInfoDialog(modal)" icon size="20" @click="handleCancel(modal, true)">
+              close
+            </i>
+          </div>
+
+          <div class="content body-1 text-content" v-if="modal.content && !isPromptDialog(modal)"
+            v-html="modal.content" />
+
+          <div class="content" v-else-if="isPromptDialog(modal)">
+            <textarea text solo single-line outlined v-model="modal.content"
+              class="small-input body-1 font-weight-light my-0" rows="3" />
+          </div>
+
+          <div v-else-if="modal.component && modal.data" class="content" :style="{
+            visibility: setVisibility(modal.id)
+          }">
+            <component v-if="isInfoDialog(modal)" :is="modal.component" v-bind="modal.data.props || modal.data.anyData"
+              @set-result="onSetResult(modal, $event)"
+              @external-component-created="onComponentInstanceCreated(modal, $event)"
+              @external-component-loading="modal.loading = $event" />
+
+            <component v-else-if="isCreateEditDialog(modal)" :is="modal.component" v-bind="modal.data.props"
+              @cancel="handleCancel(modal)" @set-result="onSetResult(modal, $event)"
+              @dialog:activate="onDlgActivate(modal)" @dialog:processing="onProcessing(modal, $event)"
+              @external-component-created="onComponentInstanceCreated(modal, $event)"
+              @external-component-loading="modal.loading = $event" />
+
+            <component v-else-if="isSelectDialog(modal)" :is="modal.component"
+              :data="modal.data.model || modal.data.lists" :is-tree="modal.data.isTree"
+              :disabled="modal.data.disabledItems" :selected="modal.data.selectedItems" :any-data="modal.data.anyData"
+              :multiselect="modal.data.multiselect" v-bind="modal.data.props"
+              @external-component-created="onComponentInstanceCreated(modal, $event)"
+              @external-component-loading="modal.loading = $event" @set-result="onSetResult(modal, $event)"
+              @set-result-and-close="onSetResultAndClose(modal, $event)" />
+          </div>
+
+          <div v-if="!modal.hideFooter" class="footer" :class="{ 'footerBtnEnd': isSelectDialog(modal) }"
+            style="justify-content: center">
+            <button id="modalOk" :disabled="modal.okDisabled" :loading="modal.okLoading" color="primary"
+              class="small-button rounded-button elevation-0" @click="handleOk(modal)">{{ okButtonText(modal) }}
+            </button>
+
+            <button id="modalCancel" v-if="!isAlertDialog(modal) && !isInfoDialog(modal)"
+              :disabled="modal.okOnly || modal.okLoading" outlined color="primary" class="small-button rounded-button"
+              @click="handleCancel(modal)">
+              {{ cancelButtonText(modal) }}
+            </button>
+          </div>
+        </div>
+      </dialog>
+    </div>
+  </div>
+</template>
+<script setup lang="ts">
+import type { PubSubService } from '@/infrastructure/services/pubSub.service';
+import { DIALOG_CLOSE_ALL, DIALOG_OPEN_EVENT, DIALOG_SET_DATA, type IDialogWindow } from '@/ui/components/dialogContainer/types';
+import { defineDeps } from '@/ui/defineComponent';
+import { DEPS } from '@/ui/depIds';
+import { DialogType, type IDialogData, type IDialogInfo, type IDialogResult } from '@/ui/interactiveQuery/types';
+import type { IViewModel } from '@/ui/viewModels/viewModel';
+import { ref, computed, onMounted, onUnmounted, nextTick, onBeforeUnmount } from 'vue';
+
+type TDeps = {
+  pubSubService: PubSubService
+}
+const { pubSubService } = await defineDeps<TDeps>({ pubSubService: DEPS.PubSub })
+
+const modals: Array<IDialogWindow<IViewModel<number | string>>> = []
+let counter = 1
+let modalResult: IViewModel<string | number> = null
+let resizingModalId: number = -1
+
+onMounted(() => {
+  nextTick(() => {
+    pubSubService.subscribe(DIALOG_SET_DATA, setData)
+    pubSubService.subscribe(DIALOG_OPEN_EVENT, open)
+  })
+  pubSubService.subscribe(DIALOG_CLOSE_ALL, closeAll)
+})
+
+onBeforeUnmount(() => {
+  pubSubService.unsubscribe(DIALOG_SET_DATA, setData)
+  pubSubService.unsubscribe(DIALOG_OPEN_EVENT, open)
+  pubSubService.unsubscribe(DIALOG_CLOSE_ALL, closeAll)
+})
+
+function setData<T extends IViewModel<number | string>>({ modalId, modalData }: { modalId: number; modalData: IDialogData<T | T[]> }) {
+  const modal: IDialogWindow<IViewModel<number | string>> | undefined = modals.find(item => item.id === modalId);
+  if (!modal) {
+    return;
+  }
+  modal.data = modalData as IDialogData<IViewModel<string | number> | IViewModel<string | number>[]>
+  modal.resolveFunction = modalData.resolveFunction as (value?: number | IDialogResult<IViewModel<string | number>> | undefined) => void
+  modal.component = modalData.component
+  modal.loading = false
+}
+
+const open = (modalInfo: IDialogInfo<IViewModel<number | string>>) => {
+  const modal: IDialogWindow<IViewModel<number | string>> = {
+    id: counter++,
+    noModal: modalInfo.noModal,
+    size: modalInfo.size ? modalInfo.size : 'sm',
+    type: modalInfo.type,
+    title: modalInfo.title,
+    description: modalInfo.description,
+    darkTitle: modalInfo.darkTitle,
+    content: modalInfo.content,
+    resolveFunction: modalInfo.resolveFunction,
+    okTitle: modalInfo.okTitle,
+    cancelTitle: modalInfo.cancelTitle,
+    okResult: modalInfo.okResult,
+    cancelResult: modalInfo.cancelResult,
+    okOnly:
+      modalInfo.type === DialogType.Alert ||
+      modalInfo.type === DialogType.Notification ||
+      modalInfo.type === DialogType.Info,
+    show: true,
+    loading: Boolean(modalInfo.twoStepOpen),
+    okLoading: false,
+    okDisabled: modalInfo.type === DialogType.Select,
+    selectAsOk: modalInfo.selectAsOk,
+    hideFooter:
+      // eslint-disable-next-line no-nested-ternary
+      'hideFooter' in modalInfo
+        ? modalInfo.hideFooter
+        : 'selectAsOk' in modalInfo
+          ? modalInfo.selectAsOk
+          : false /* modalInfo.type !== DialogType.CreateEdit  && */,
+    resolved: false,
+    width: modalInfo.width,
+    height: modalInfo.height,
+    fullHeight: modalInfo.fullHeight,
+    closable: 'closable' in modalInfo ? modalInfo.closable : true,
+    isChanged: modalInfo.isChanged,
+  };
+  modals.push(modal)
+  if (modalInfo.twoStepOpen && modalInfo.resolveFunction) {
+    modalInfo.resolveFunction(modal.id)
+  }
+  const checkDialogExist = setInterval(() => {
+    const el = document.querySelector(`.${uniqKey(modal)}`)
+    if (el) {
+      clearInterval(checkDialogExist)
+      modal.el = el as HTMLElement
+      // dialogManager.dialogCreated(modal)
+    }
+  }, 100)
+}
+
+const closeAll = (all: boolean = false): void => {
+  modals.forEach(modal => {
+    if (all || !modal.noModal) {
+      remove(modal)
+    }
+  });
+}
+
+const remove = (modal: IDialogWindow<IViewModel<number | string>>) => {
+  modal.resolved = true;
+  nextTick(() => {
+    const i = modals.indexOf(modal)
+    if (i > -1) {
+      modals.splice(i, 1);
+      // dialogManager.dialogClosed(modal);
+    }
+  });
+}
+
+const uniqKey = (modal: IDialogWindow<IViewModel<number | string>>): string => `dlg-${modal.id}`
+</script>
+<style scoped lang="scss">
+$modal-header-height: calc(var(--toolbar-height) - 10px);
+
+.card {
+  display: flex;
+  flex-direction: column;
+
+  &.promt-card {
+    padding: 0;
+  }
+}
+
+.modal-title {
+  flex-wrap: nowrap !important;
+  height: 46px;
+  padding-top: 0;
+  padding-left: 10px;
+  padding-right: 10px;
+
+  &>span {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.dark-title {
+  background-color: black !important;
+}
+
+.white-text {
+  color: white !important;
+}
+
+.black-text {
+  color: black;
+}
+
+.icon {
+  width: 18px;
+  height: 18px;
+  color: rgba(0, 0, 0, 0.54);
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.content {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.text-content {
+  position: relative;
+  text-align: center;
+  color: black !important;
+}
+
+.footer {
+  padding: 0 20px 20px;
+
+  &.footerBtnEnd {
+    display: flex;
+    justify-content: flex-end !important;
+  }
+}
+
+.dialog {
+  display: flex;
+}
+
+:deep {
+  .modal {
+    width: auto;
+    min-width: 25%;
+  }
+
+  .height-full {
+    height: 100% !important;
+  }
+
+  .no-grid {
+    display: block !important;
+    height: auto !important;
+  }
+}
+</style>
