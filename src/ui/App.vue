@@ -2,6 +2,8 @@
 import { RouterLink, RouterView } from 'vue-router'
 import HelloWorld from '@/ui/components/HelloWorld.vue'
 import DialogContainer from '@/ui/components/dialogContainer/dialogContainer.vue'
+import ErrorBoundary from '@/ui/ErrorBoundary.vue'
+import { preloadView } from '@/ui/router/loadView'
 </script>
 
 <template>
@@ -14,15 +16,22 @@ import DialogContainer from '@/ui/components/dialogContainer/dialogContainer.vue
       </Suspense>
       <nav>
         <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/about">About</RouterLink>
-        <RouterLink to="/movies">Movie list</RouterLink>
+        <RouterLink to="/about" @mouseenter="() => preloadView('AboutView')">About</RouterLink>
+        <RouterLink to="/movies" @mouseenter="() => preloadView('MovieList')">Movie list</RouterLink>
       </nav>
     </div>
   </header>
 
-  <Suspense>
-    <RouterView />
-  </Suspense>
+  <ErrorBoundary>
+    <Suspense>
+      <template #default>
+        <RouterView />
+      </template>
+      <template #fallback>
+        Loading...
+      </template>
+    </Suspense>
+  </ErrorBoundary>
 
   <Suspense>
     <dialog-container />
@@ -63,6 +72,21 @@ nav a {
 
 nav a:first-of-type {
   border: 0;
+}
+
+.loading-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  padding: 2rem;
+}
+
+.loading-fallback h2 {
+  margin-bottom: 1rem;
+  color: #2c3e50;
+  font-size: 1.5rem;
 }
 
 @media (min-width: 1024px) {
