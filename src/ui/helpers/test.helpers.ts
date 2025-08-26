@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { Container } from 'inversify'
 import { Suspense, h, defineComponent } from 'vue'
 
-const ioc = new Container({ autoBindInjectable: true })
+const ioc = new Container()
 
 export const registerDeps = (deps: Record<symbol, InstanceType<any>>) =>
   ioc.bind(DEPS_REGISTER).toConstantValue(deps)

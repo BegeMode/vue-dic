@@ -15,7 +15,7 @@ import { INTERACTIVE_QUERY_INVOKER, QUERY_INVOKER } from '@/domain/global'
 import { QueryBase } from '@/domain/queries/queryBase'
 import { DEPS } from '@/ui/depIds'
 
-const ioc = new Container({ autoBindInjectable: true })
+const ioc = new Container()
 ioc.bind<Container>(DEPS.Container).toConstantValue(ioc)
 ioc.bind(DEPS_REGISTER).toConstantValue(deps)
 

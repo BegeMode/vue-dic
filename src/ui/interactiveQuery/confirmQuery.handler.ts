@@ -1,11 +1,12 @@
 import { DEPS } from '@/ui/depIds'
 import { InteractiveQuery } from '@/decorators/interactiveQuery'
-import { injectable } from 'inversify'
+import { injectable, injectFromBase } from 'inversify'
 import { BaseInteractiveQueryHandler } from '@/ui/interactiveQuery/baseInteractive.handler'
 import { DialogButton, type DialogWithText } from '@/ui/interactiveQuery/types'
 import { ConfirmQuery, type ConfirmResult } from '@/domain/queries/interactiveQuery/confirm.query'
 
 @injectable()
+@injectFromBase()
 @InteractiveQuery(DEPS.ConfirmQuery, ConfirmQuery)
 export class ConfirmQueryHandler extends BaseInteractiveQueryHandler<ConfirmResult> {
   async exec(query: ConfirmQuery): Promise<ConfirmResult> {

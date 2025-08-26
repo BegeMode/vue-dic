@@ -1,6 +1,7 @@
 import 'reflect-metadata'
-import { getDependencies, type Container, type interfaces } from 'inversify'
+import { type Container } from 'inversify'
 import { DepScope, DEPS_REGISTER, type IDep } from '@/infrastructure/ioc/types'
+import { getPreloadableIdentifiers } from './getDependencies'
 
 function getDepsRegister(
   ioc: Container
@@ -99,7 +100,7 @@ export async function loadAndBindDep(id: symbol, ioc: Container) {
 async function bindDep(
   ioc: Container,
   id: symbol,
-  dep: interfaces.Newable<unknown>,
+  dep: any,
   depScope: DepScope = DepScope.SingletonScope
 ) {
   const binding = ioc.bind(id).to(dep)
@@ -117,10 +118,10 @@ async function bindDep(
     default:
       break
   }
-  const _deps: interfaces.Target[] = getDependencies((ioc as any)._metadataReader, dep)
+  const _deps = getPreloadableIdentifiers(dep)
   for (let i = 0; i < _deps.length; i++) {
-    const dep = _deps[i]
-    await loadAndBindDep(dep.serviceIdentifier as symbol, ioc)
+    const depId = _deps[i]
+    await loadAndBindDep(depId as symbol, ioc)
   }
 }
 

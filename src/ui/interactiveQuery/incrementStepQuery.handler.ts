@@ -1,12 +1,13 @@
 import { DEPS } from '@/ui/depIds'
 import { InteractiveQuery } from '@/decorators/interactiveQuery'
-import { injectable } from 'inversify'
+import { injectable, injectFromBase } from 'inversify'
 import { BaseInteractiveQueryHandler } from '@/ui/interactiveQuery/baseInteractive.handler'
 import { DialogButton, type DialogWithComponent } from '@/ui/interactiveQuery/types'
 import { IncrementStepQuery } from '@/domain/queries/interactiveQuery/incrementStep.query'
 import IncrementStep from '@/ui/components/IncrementStep.vue'
 
 @injectable()
+@injectFromBase()
 @InteractiveQuery(DEPS.IncrementStepQuery, IncrementStepQuery)
 export class IncrementStepQueryHandler extends BaseInteractiveQueryHandler<number> {
   async exec(query: IncrementStepQuery): Promise<number> {
