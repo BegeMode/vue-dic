@@ -5,8 +5,6 @@
 //   "experimentalDecorators": true,
 //   "emitDecoratorMetadata": true
 
-import 'reflect-metadata'
-
 /** ---- Типы (минимальные, без зависимостей от 'inversify') ---- */
 export type MetadataEntry = {
   key: string | symbol

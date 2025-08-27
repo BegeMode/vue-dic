@@ -1,7 +1,6 @@
 import 'reflect-metadata'
 import { type Container } from 'inversify'
 import { DepScope, DEPS_REGISTER, type IDep } from '@/infrastructure/ioc/types'
-import { getPreloadableIdentifiers } from './getDependencies'
 
 function getDepsRegister(
   ioc: Container
@@ -97,6 +96,36 @@ export async function loadAndBindDep(id: symbol, ioc: Container) {
   }
 }
 
+function getDepsIdentifiers(target: Function): unknown[] {
+  const CLASS_METADATA_KEY = '@inversifyjs/core/classMetadataReflectKey'
+  const metadata = Reflect.getMetadata(CLASS_METADATA_KEY, target)
+  if (!metadata) {
+    return []
+  }
+  const all: unknown[] = []
+  // Add dependencies from constructor
+  if (metadata.constructorArguments) {
+    for (const arg of metadata.constructorArguments) {
+      if (arg?.value && !arg.optional) {
+        // Exclude optional
+        all.push(arg.value)
+      }
+    }
+  }
+  // Add dependencies from properties
+  if (metadata.properties) {
+    for (const [, propertyMetadata] of metadata.properties) {
+      if (propertyMetadata?.value && !propertyMetadata.optional) {
+        // Exclude optional
+        all.push(propertyMetadata.value)
+      }
+    }
+  }
+  // Remove duplicates
+  const seen = new Set<unknown>()
+  return all.filter((id) => (seen.has(id) ? false : (seen.add(id), true)))
+}
+
 async function bindDep(
   ioc: Container,
   id: symbol,
@@ -118,7 +147,7 @@ async function bindDep(
     default:
       break
   }
-  const _deps = getPreloadableIdentifiers(dep)
+  const _deps = getDepsIdentifiers(dep)
   for (let i = 0; i < _deps.length; i++) {
     const depId = _deps[i]
     await loadAndBindDep(depId as symbol, ioc)

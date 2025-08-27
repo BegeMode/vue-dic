@@ -17,18 +17,21 @@
   </div>
 </template>
 <script lang="ts">
-import type { Movie } from '@/domain/models/movie';
-import { MovieListQuery } from '@/domain/queries/movie.query';
-import type { TDepIds } from '@/ui/types';
-import { defineComponent, ref, watch } from 'vue';
-import LoadingSpinner from '@/ui/components/LoadingSpinner.vue';
+import type { Movie } from '@/domain/models/movie'
+import { MovieListQuery } from '@/domain/queries/movie.query'
+import type { SetupContextExtended, TDepIds } from '@/ui/types'
+import { ref, watch } from 'vue'
+import LoadingSpinner from '@/ui/components/LoadingSpinner.vue'
+import type { DateTimeService } from '@/application/dateTimeService'
+import { DEPS } from '@/ui/depIds'
+import { defineComponent } from '@/ui/defineComponent'
 
 type TDeps = {
-  // firstService: FirstService;
+  dateTimeService: DateTimeService;
 }
 
 const deps: TDepIds<TDeps> = {
-  // firstService: SERVICES.First,
+  dateTimeService: DEPS.DateTime,
 }
 
 export default defineComponent({
@@ -36,15 +39,15 @@ export default defineComponent({
     LoadingSpinner
   },
   deps,
-  setup() {
-    // const { deps } = context as SetupContextExtended<TDeps>
-    // console.log(deps.firstService)
+  setup(_props, context) {
+    const { deps } = context as SetupContextExtended<TDeps>
     const movies = ref<Movie[]>([])
     const years = ref<number[]>([])
-    for (let i = 2025; i > 1999; i--) {
+    const startYear = deps.dateTimeService.getYear(deps.dateTimeService.now())
+    for (let i = startYear; i > 1999; i--) {
       years.value.push(i)
     }
-    const selectedYear = ref<number>(2025)
+    const selectedYear = ref<number>(startYear)
     const loading = ref(false)
 
     watch(selectedYear, (newVal) => {

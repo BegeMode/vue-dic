@@ -11,4 +11,8 @@ export class DateTimeService {
     result.setDate(result.getDate() + days)
     return result
   }
+
+  public getYear(date: Date): number {
+    return date.getFullYear()
+  }
 }
