@@ -42,12 +42,12 @@ import { DIALOG_CLOSE_ALL, DIALOG_OPEN_EVENT, type DialogWindow } from '@/ui/com
 import { defineDeps } from '@/ui/defineComponent'
 import { DEPS } from '@/ui/depIds'
 import { DialogButton, type DialogWithComponent, type DialogWithText } from '@/ui/interactiveQuery/types'
-import { onMounted, nextTick, onBeforeUnmount, reactive, markRaw } from 'vue'
+import { nextTick, reactive, markRaw, onMounted, onBeforeUnmount } from 'vue'
 
 type TDeps = {
   pubSubService: PubSubService
 }
-const { pubSubService } = await defineDeps<TDeps>({ pubSubService: DEPS.PubSub })
+const { pubSubService } = defineDeps<TDeps>({ pubSubService: DEPS.PubSub })
 
 let counter = 1
 const uniqKey = (dlg: DialogWindow): string => `dlg-${dlg.id}`

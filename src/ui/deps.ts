@@ -4,7 +4,7 @@ import { deps as domainDeps } from '@/domain/deps'
 import { deps as appDeps } from '@/application/deps'
 import { deps as infraDeps } from '@/infrastructure/deps'
 import { AlertQuery } from '@/domain/queries/interactiveQuery/alert.query'
-import type { IDep } from '@/infrastructure/ioc/types'
+import { DepScope, type IDep } from '@/infrastructure/ioc/types'
 import { DEPS } from '@/ui/depIds'
 import { InteractiveQueryInvoker } from '@/ui/interactiveQueryInvoker'
 import { Logger } from '@/ui/logger'
@@ -42,12 +42,11 @@ export const deps = {
     DEPS.IncrementStepQuery,
     IncrementStepQuery,
     () => import('@/ui/interactiveQuery/incrementStepQuery.handler')
-  )
-
-  // [SERVICES.First]: {
-  //   loader: () => import('@/services/first'),
-  //   scope: DepScope.SingletonScope
-  // },
+  ),
+  [DEPS.First]: {
+    loader: () => import('@/ui/services/firstService'),
+    scope: DepScope.SingletonScope
+  }
   // [SERVICES.Second]: () => import('@/services/second'),
   // [SERVICES.Third]: () => import('@/services/third'),
   // [SERVICES.Forth]: () => import('@/services/forth')

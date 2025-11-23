@@ -240,7 +240,11 @@ async function loadDeps(
 
 type TClass<T> = T extends Record<string, infer R> ? R : never
 
-export async function defineDeps<T extends Record<string, any>>(
+export function defineDeps<T extends Record<string, any>>(deps: Record<keyof T, symbol>): T {
+  return deps as any
+}
+
+export async function defineDepsAsync<T extends Record<string, any>>(
   deps: Record<string, symbol>
 ): Promise<Record<keyof typeof deps, TClass<T>>> {
   const instance = getCurrentInstance() as IInstance

@@ -1,5 +1,3 @@
-// di-introspect.ts
-// Самодостаточные утилиты для извлечения зависимостей из классов Inversify без импорта внутренних API.
 // Требуется один раз подключить 'reflect-metadata' на старте приложения,
 // и включить в tsconfig:
 //   "experimentalDecorators": true,

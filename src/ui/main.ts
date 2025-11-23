@@ -27,8 +27,13 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 
-registerStaticDeps(ioc)
-Reflect.defineMetadata(QUERY_INVOKER, ioc.get(DEPS.QueryInvoker), QueryBase)
-Reflect.defineMetadata(INTERACTIVE_QUERY_INVOKER, ioc.get(DEPS.InteractiveQueryInvoker), QueryBase)
+registerStaticDeps(ioc).then(() => {
+  Reflect.defineMetadata(QUERY_INVOKER, ioc.get(DEPS.QueryInvoker), QueryBase)
+  Reflect.defineMetadata(
+    INTERACTIVE_QUERY_INVOKER,
+    ioc.get(DEPS.InteractiveQueryInvoker),
+    QueryBase
+  )
+})
 
 app.mount('#app')

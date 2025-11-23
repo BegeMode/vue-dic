@@ -20,11 +20,10 @@
 import type { Movie } from '@/domain/models/movie'
 import { MovieListQuery } from '@/domain/queries/movie.query'
 import type { SetupContextExtended, TDepIds } from '@/ui/types'
-import { ref, watch } from 'vue'
+import { defineComponent, ref, watch } from 'vue'
 import LoadingSpinner from '@/ui/components/LoadingSpinner.vue'
 import type { DateTimeService } from '@/application/dateTimeService'
 import { DEPS } from '@/ui/depIds'
-import { defineComponent } from '@/ui/defineComponent'
 
 type TDeps = {
   dateTimeService: DateTimeService;

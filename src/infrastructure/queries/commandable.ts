@@ -11,7 +11,8 @@ function commandable<TCommand extends ICommand<TResult>, TResult>(
 ) {
   if (
     !isTest() &&
-    (action.name !== 'wrappedAction' || Object.getOwnPropertySymbols(action).length < 2)
+    (Object.getOwnPropertySymbols(action).length < 2 ||
+      !Object.getOwnPropertySymbols(action).find((symbol) => (action as any)[symbol] === true))
   ) {
     throw new Error(`Action ${action.name} is not a Pinia action`)
   }

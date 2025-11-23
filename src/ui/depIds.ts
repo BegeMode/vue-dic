@@ -8,7 +8,6 @@ export const DEPS = {
   AlertQuery: Symbol.for('AlertQuery'),
   ConfirmQuery: Symbol.for('ConfirmQuery'),
   IncrementStepQuery: Symbol.for('IncrementStepQuery'),
-  DateTime: Symbol.for('DateTime'),
   Alert: Symbol.for('Alert'),
   First: Symbol.for('First'),
   Second: Symbol.for('Second'),

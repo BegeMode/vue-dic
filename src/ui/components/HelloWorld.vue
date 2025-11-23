@@ -63,7 +63,7 @@ const dtStore = useDateStore()
 const dt = computed(() => dtStore.dt)
 let dontAskToAddDay = false
 
-const { dateTimeService } = await defineDeps<TDeps>({ dateTimeService: DEPS.DateTime })
+const { dateTimeService } = defineDeps<TDeps>({ dateTimeService: DEPS.DateTime })
 
 const onAddDay = async () => {
   if (!dontAskToAddDay) {
