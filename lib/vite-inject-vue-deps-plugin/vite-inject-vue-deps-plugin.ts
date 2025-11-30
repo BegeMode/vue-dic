@@ -30,6 +30,18 @@ export type DIPluginOptions = {
 
 const DEFAULTS: Required<Pick<DIPluginOptions, 'devTelemetry'>> = { devTelemetry: false }
 
+// ---------- IoC deps graph (for vite-chunks-map-plugin) ----------
+const VIRTUAL_IOC_DEPS_ID = 'virtual:ioc-deps-graph'
+const RESOLVED_VIRTUAL_IOC_DEPS_ID = '\0' + VIRTUAL_IOC_DEPS_ID
+
+/** Stores collected DEPS.* identifiers per module (absolute path) */
+const fileIocDeps = new Map<string /* moduleId */, Set<string /* depSymbolString */>>()
+
+/** Get collected IoC dependencies map (for external use) */
+export function getFileIocDeps(): Map<string, Set<string>> {
+  return fileIocDeps
+}
+
 // ---------- import helpers ----------
 function isImportFrom(node: ASTNode, from: string): boolean {
   return (
@@ -357,10 +369,12 @@ function transformDefineDepsDestructuring(code: string, ast: ASTProgram, ms: Mag
 /** 
  * Transforms destructuring of context.deps into indexed access for minimization
  * One pass through AST (optimization!)
+ * Returns collected depIds (e.g. "DEPS.DateTime", "DEPS.First")
  */
-function transformContextDepsDestructuring(code: string, ast: ASTProgram, ms: MagicString) {
+function transformContextDepsDestructuring(code: string, ast: ASTProgram, ms: MagicString): Set<string> {
   const transformations: Array<{ start: number; end: number; replacement: string }> = []
   let depsObjectPropNames: string[] = []
+  const allDepIds = new Set<string>()  // Collect all depIds
 
   // One pass - we seek the deps object AND destructuring of context.deps
   walk(ast, {
@@ -381,7 +395,9 @@ function transformContextDepsDestructuring(code: string, ast: ASTProgram, ms: Ma
             for (const prop of depsProps) {
               if (prop.type === 'Property' && prop.key?.type === 'Identifier') {
                 propNames.push(prop.key.name)
-                symbolValues.push(code.slice(prop.value.start, prop.value.end))
+                const depId = code.slice(prop.value.start, prop.value.end)
+                symbolValues.push(depId)
+                allDepIds.add(depId)  // ✅ Collect depId
               }
             }
 
@@ -453,6 +469,8 @@ function transformContextDepsDestructuring(code: string, ast: ASTProgram, ms: Ma
     .forEach((t) => {
       ms.overwrite(t.start, t.end, t.replacement)
     })
+
+  return allDepIds
 }
 
 // ---------- locators ----------
@@ -672,6 +690,24 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
       isProduction = config.command === 'build'
     },
 
+    // ---------- virtual:ioc-deps-graph module ----------
+    resolveId(id) {
+      if (id === VIRTUAL_IOC_DEPS_ID) {
+        return RESOLVED_VIRTUAL_IOC_DEPS_ID
+      }
+    },
+
+    load(id) {
+      if (id === RESOLVED_VIRTUAL_IOC_DEPS_ID) {
+        // Convert Map<string, Set<string>> to Record<string, string[]>
+        const result: Record<string, string[]> = {}
+        for (const [moduleId, deps] of fileIocDeps) {
+          result[moduleId] = Array.from(deps)
+        }
+        return `export const iocDepsByFile = ${JSON.stringify(result, null, 2)};`
+      }
+    },
+
     async transform(code, id) {
       // In production process .vue?type=script
       // In dev process simply .vue
@@ -751,7 +787,7 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
         }
       } else if (scan.kind === 'options') {
         const before = s.toString()
-        transformContextDepsDestructuring(code, ast, s)
+        allDepIds = transformContextDepsDestructuring(code, ast, s)  // ✅ Get depIds
         const after = s.toString()
         if (before !== after) {
           // Re-parse transformed code
@@ -770,6 +806,11 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
             this.warn(`[${PluginName}] transformed context.deps destructuring in ${id}`)
           }
         }
+      }
+
+      // ✅ Store collected depIds for ioc-deps-graph virtual module
+      if (allDepIds.size > 0) {
+        fileIocDeps.set(cleanId, allDepIds)
       }
 
       // 1) Cut the default export expression and get the component name
@@ -929,11 +970,15 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
   }
 }
 
-// ========== Exports for testing ==========
+// ========== Exports for testing and vite-chunks-map-plugin ==========
 export {
   collectLocalDefineDepsNames,
   transformDefineDepsDestructuring,
   transformContextDepsDestructuring,
   hasDepsAlready,
-  isDefineComponentCall
+  isDefineComponentCall,
+  // Virtual module exports for vite-chunks-map-plugin
+  VIRTUAL_IOC_DEPS_ID,
+  RESOLVED_VIRTUAL_IOC_DEPS_ID
+  // getFileIocDeps is already exported above as function declaration
 }

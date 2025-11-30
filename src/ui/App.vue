@@ -3,7 +3,7 @@ import { RouterLink, RouterView } from 'vue-router'
 import HelloWorld from '@/ui/components/HelloWorld.vue'
 import DialogContainer from '@/ui/components/dialogContainer/dialogContainer.vue'
 import ErrorBoundary from '@/ui/ErrorBoundary.vue'
-import { preloadView } from '@/ui/router/loadView'
+import { prefetchRoute } from '@/ui/router/loadView'
 </script>
 
 <template>
@@ -16,8 +16,8 @@ import { preloadView } from '@/ui/router/loadView'
       </Suspense>
       <nav>
         <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/about" @mouseenter="() => preloadView('AboutView')">About</RouterLink>
-        <RouterLink to="/movies" @mouseenter="() => preloadView('MovieList')">Movie list</RouterLink>
+        <RouterLink to="/about" @mouseenter="prefetchRoute('/about')">About</RouterLink>
+        <RouterLink to="/movies" @mouseenter="prefetchRoute('/movies')">Movie list</RouterLink>
       </nav>
     </div>
   </header>

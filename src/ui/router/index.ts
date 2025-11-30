@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '@/ui/views/HomeView.vue'
-import { loadView } from '@/ui/router/loadView'
+import { loadView, prefetchRoute } from '@/ui/router/loadView'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -26,6 +26,12 @@ const router = createRouter({
       )
     }
   ]
+})
+
+// Prefetch route chunks before navigation
+router.beforeEach((to) => {
+  // Start prefetching chunks for the target route
+  prefetchRoute(to.path)
 })
 
 export default router

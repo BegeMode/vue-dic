@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 import viteInjectVueDepsPlugin from './lib/vite-inject-vue-deps-plugin/vite-inject-vue-deps-plugin'
+import viteChunksMapPlugin from './lib/vite-chunks-map-plugin'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -27,7 +28,19 @@ export default defineConfig({
       devTelemetry: false
     }),
     vue(),
-    vueDevTools()
+    vueDevTools(),
+    viteChunksMapPlugin({
+      routerDir: 'src/ui/router',
+      iocMapFiles: [
+        'src/domain/deps.ts',
+        'src/application/deps.ts', 
+        'src/infrastructure/deps.ts',
+        'src/ui/deps.ts'
+      ],
+      includeStaticChunks:  false,
+      // includeChunkPatterns: ['loader-*'],
+      devTelemetry: false
+    })
   ],
   resolve: {
     alias: {
