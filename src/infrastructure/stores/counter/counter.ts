@@ -1,17 +1,14 @@
-import { ref, computed } from 'vue'
+import { ref, computed, type ComputedRef, type Ref } from 'vue'
 import { defineStore } from 'pinia'
-import { getQueryableFunc } from '@/infrastructure/queries/queryable'
+import { queryable } from '@/infrastructure/queries/queryable'
 import { CurrentUserQuery } from '@/domain/queries/user.query'
-import type { CommandQueryTypes } from './types'
 import User from '@/domain/models/user'
 import { IncrementCommand } from '@/domain/commands/increment.command'
-import { getCommandableFunc } from '@/infrastructure/queries/commandable'
+import { commandable } from '@/infrastructure/queries/commandable'
 import { delay } from '@/utils/delay'
+import { INFRA_DEPS } from '@/infrastructure/depIds'
 
-const queryable = getQueryableFunc<CommandQueryTypes>()
-const commandable = getCommandableFunc<CommandQueryTypes>()
-
-export const useCounterStore = defineStore('counter', ({ action }) => {
+const useCounterStore = defineStore(INFRA_DEPS.CounterStore.description!, ({ action }) => {
   const count = ref(0)
   const doubleCount = computed(() => count.value * 2)
 
@@ -36,3 +33,7 @@ export const useCounterStore = defineStore('counter', ({ action }) => {
     increment1: queryable(CurrentUserQuery, action(increment1))
   }
 })
+
+export type CounterStore = ReturnType<typeof useCounterStore>
+
+export default useCounterStore

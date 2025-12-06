@@ -6,6 +6,8 @@ export type ConfirmResult = {
 }
 
 export class ConfirmQuery extends InteractiveQueryBase<ConfirmResult> {
+  readonly __brand = 'ConfirmQuery' as const
+
   constructor(
     public text: string,
     public title?: string,

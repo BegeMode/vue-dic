@@ -1,7 +1,9 @@
 import type { ICommand, ICommandInvoker } from '@/domain/commands/command'
 import { CommandInvoker } from '@/domain/commands/commandInvoker'
 
-export class CommandBase<TResult> implements ICommand<TResult> {
+export abstract class CommandBase<TResult> implements ICommand<TResult> {
+  /** Уникальный бренд для номинальной типизации. Каждый наследник должен определить свой уникальный литерал. */
+  abstract readonly __brand: string
   private static _commandInvoker: ICommandInvoker
 
   private static get commandInvoker(): ICommandInvoker {

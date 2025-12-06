@@ -1,3 +1,3 @@
-import { useCounterStore } from '@/infrastructure/stores/counter/counter'
+import useCounterStore from '@/infrastructure/stores/counter/counter'
 
 useCounterStore()

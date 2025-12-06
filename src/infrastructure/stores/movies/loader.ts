@@ -1,3 +1,3 @@
-import { useMoviesStore } from '@/infrastructure/stores/movies/movies'
+import useMoviesStore from '@/infrastructure/stores/movies/movies'
 
 useMoviesStore()

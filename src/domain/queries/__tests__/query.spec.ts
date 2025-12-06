@@ -3,15 +3,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { QueryBase } from '@/domain/queries/queryBase'
 import { defineStore, setActivePinia, createPinia } from 'pinia'
 import { ref } from 'vue'
-import { getQueryableFunc } from '@/infrastructure/queries/queryable'
+import { queryable } from '@/infrastructure/queries/queryable'
 
 class TestQuery extends QueryBase<number> {
+  readonly __brand = 'TestQuery' as const
+
   constructor(public value: number) {
     super()
   }
 }
-
-const queryable = getQueryableFunc<TestQuery>()
 
 export const useTestStore = defineStore('test', ({ action }) => {
   const count = ref(0)

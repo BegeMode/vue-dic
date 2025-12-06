@@ -5,9 +5,9 @@ import { CommandBase } from '@/domain/commands/commandBase'
 
 export type TCommandResult<T> = T extends ICommand<infer TResult> ? TResult : never
 
-function commandable<TCommand extends ICommand<TResult>, TResult>(
+export function commandable<TCommand extends ICommand<TResult, TBrand>, TResult, TBrand extends string>(
   command: { prototype: TCommand; name: string },
-  action: TAction<TCommand, TResult>
+  action: TAction<NoInfer<TCommand>, NoInfer<TResult>>
 ) {
   if (
     !isTest() &&

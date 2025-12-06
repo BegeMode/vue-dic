@@ -1,7 +1,8 @@
 import { CommandsQueries } from '@/domain/commandsQueries'
-import { CommandQuery as CounterCommandQuery } from '@/infrastructure/stores/counter/types'
-import { DateCommandQuery } from '@/infrastructure/stores/date/types'
-import { MoviesCommandQuery } from '@/infrastructure/stores/movies/types'
+import { CurrentUserQuery } from '@/domain/queries/user.query'
+import { IncrementCommand } from '@/domain/commands/increment.command'
+import { DateUpdateCommand } from '@/domain/commands/date.command'
+import { MovieListQuery } from '@/domain/queries/movie.query'
 
 function registerCommandsQueries(types: Array<any>, loader: () => unknown) {
   if (!Array.isArray(types)) {
@@ -12,6 +13,9 @@ function registerCommandsQueries(types: Array<any>, loader: () => unknown) {
   })
 }
 
-registerCommandsQueries(CounterCommandQuery, () => import('@/infrastructure/stores/counter/loader'))
-registerCommandsQueries(DateCommandQuery, () => import('@/infrastructure/stores/date/loader'))
-registerCommandsQueries(MoviesCommandQuery, () => import('@/infrastructure/stores/movies/loader'))
+registerCommandsQueries(
+  [CurrentUserQuery, IncrementCommand],
+  () => import('@/infrastructure/stores/counter/loader')
+)
+registerCommandsQueries([DateUpdateCommand], () => import('@/infrastructure/stores/date/loader'))
+registerCommandsQueries([MovieListQuery], () => import('@/infrastructure/stores/movies/loader'))

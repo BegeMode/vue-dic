@@ -1,15 +1,11 @@
-import { ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { defineStore } from 'pinia'
-// import { getQueryableFunc } from '@/infrastructure/queries/queryable'
-import { getCommandableFunc } from '@/infrastructure/queries/commandable'
-import type { DateCommandQueryTypes } from '@/infrastructure/stores/date/types'
+import { commandable } from '@/infrastructure/queries/commandable'
 import { DateUpdateCommand } from '@/domain/commands/date.command'
 import { delay } from '@/utils/delay'
+import { INFRA_DEPS } from '@/infrastructure/depIds'
 
-// const queryable = getQueryableFunc<CommandQueryTypes>()
-const commandable = getCommandableFunc<DateCommandQueryTypes>()
-
-export const useDateStore = defineStore('date', ({ action }) => {
+const useDateStore = defineStore(INFRA_DEPS.DateStore.description!, ({ action }) => {
   const dt = ref(new Date())
 
   async function update(command: DateUpdateCommand): Promise<void> {
@@ -23,3 +19,7 @@ export const useDateStore = defineStore('date', ({ action }) => {
     update: commandable(DateUpdateCommand, action(update))
   }
 })
+
+export type DateStore = ReturnType<typeof useDateStore>
+
+export default useDateStore

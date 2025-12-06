@@ -11,9 +11,11 @@ import { Logger } from '@/ui/logger'
 import { ConfirmQuery } from '@/domain/queries/interactiveQuery/confirm.query'
 import { IncrementStepQuery } from '@/domain/queries/interactiveQuery/incrementStep.query'
 
-function registerModule(moduleDeps: Record<string, symbol>, loader: () => Promise<unknown>) {
+export function registerModule(moduleDeps: Record<string, symbol>, loader: () => Promise<unknown>) {
   Object.keys(moduleDeps).forEach((dep) => {
-    deps[moduleDeps[dep]] = loader
+    if (moduleDeps[dep]) {
+      deps[moduleDeps[dep]] = loader
+    }
   })
 }
 

@@ -1,3 +1,3 @@
-import { useDateStore } from '@/infrastructure/stores/date/date'
+import useDateStore from '@/infrastructure/stores/date/date'
 
 useDateStore()

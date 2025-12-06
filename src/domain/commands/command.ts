@@ -1,4 +1,5 @@
-export interface ICommand<TResult> {
+export interface ICommand<TResult, TBrand extends string = string> {
+  readonly __brand: TBrand
   cancelable?: boolean
   exec?(): Promise<TResult>
 }

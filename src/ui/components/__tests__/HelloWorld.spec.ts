@@ -4,16 +4,16 @@ import { mount } from '@vue/test-utils'
 import HelloWorld from '../HelloWorld.vue'
 import { defineStore, setActivePinia, createPinia } from 'pinia'
 import { ref } from 'vue'
-import { getQueryableFunc } from '@/infrastructure/queries/queryable'
+import { queryable } from '@/infrastructure/queries/queryable'
 import { QueryBase } from '@/domain/queries/queryBase'
 
 class SampleQuery extends QueryBase<string> {
+  readonly __brand = 'SampleQuery' as const
+
   constructor(public id: string) {
     super()
   }
 }
-
-const queryable = getQueryableFunc<SampleQuery>()
 
 export const useCounterStore = defineStore('counter', ({ action }) => {
   const count = ref(0)

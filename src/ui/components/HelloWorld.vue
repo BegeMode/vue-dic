@@ -9,7 +9,7 @@
     <h2>{{ counter }}</h2>
     <button @click="onIncrement" :disabled="incBtnDisabled">Increment</button>
     <button @click="onAlert">Alert query</button>
-    <h4>{{ dt }}</h4>
+    <h4>{{ dateStore.dt }}</h4>
     <button @click="onAddDay" :disabled="addDayBtnDisabled">Increment date</button>
   </div>
 </template>
@@ -20,14 +20,16 @@ import { IncrementCommand } from '@/domain/commands/increment.command';
 import { AlertQuery } from '@/domain/queries/interactiveQuery/alert.query';
 import { ConfirmQuery } from '@/domain/queries/interactiveQuery/confirm.query';
 import { IncrementStepQuery } from '@/domain/queries/interactiveQuery/incrementStep.query';
-import { useCounterStore } from '@/infrastructure/stores/counter/counter';
-import { useDateStore } from '@/infrastructure/stores/date/date';
+import type { CounterStore } from '@/infrastructure/stores/counter/counter';
+import type { DateStore } from '@/infrastructure/stores/date/date';
 import { defineDeps } from '@/ui/defineComponent';
 import { DEPS } from '@/ui/depIds';
 import { computed, ref } from 'vue';
 
 type TDeps = {
   dateTimeService: DateTimeService
+  counterStore: CounterStore
+  dateStore: DateStore
 }
 
 defineProps<{
@@ -57,13 +59,14 @@ const onAlert = async () => {
   console.log(result)
 }
 
-const cntStore = useCounterStore()
-const counter = computed(() => cntStore.count)
-const dtStore = useDateStore()
-const dt = computed(() => dtStore.dt)
+const counter = computed(() => counterStore.count)
 let dontAskToAddDay = false
 
-const { dateTimeService } = defineDeps<TDeps>({ dateTimeService: DEPS.DateTime })
+const { dateTimeService, counterStore, dateStore } = defineDeps<TDeps>({
+  dateTimeService: DEPS.DateTime,
+  counterStore: DEPS.CounterStore,
+  dateStore: DEPS.DateStore
+})
 
 const onAddDay = async () => {
   if (!dontAskToAddDay) {
@@ -75,7 +78,7 @@ const onAddDay = async () => {
   }
   addDayBtnDisabled.value = true
   try {
-    const newDt = dateTimeService.addDays(dt.value, 1)
+    const newDt = dateTimeService.addDays(dateStore.dt, 1)
     await new DateUpdateCommand(newDt).exec()
   } catch (e) {
     console.error(e)
@@ -83,6 +86,9 @@ const onAddDay = async () => {
     addDayBtnDisabled.value = false
   }
 }
+console.log('dateStore:', dateStore)
+console.log('dateStore.dt:', dateStore.dt)
+console.log('typeof dateStore.dt:', typeof dateStore.dt)
 </script>
 <style scoped>
 h1 {

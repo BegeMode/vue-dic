@@ -1,7 +1,9 @@
 import type { IQuery, IQueryInvoker } from '@/domain/queries/query'
 import { INTERACTIVE_QUERY_INVOKER, QUERY_INVOKER } from '@/domain/global'
 
-export class QueryBase<TResult> implements IQuery<TResult> {
+export abstract class QueryBase<TResult> implements IQuery<TResult> {
+  /** Unique brand for nominal typing. Each descendant must define its unique literal. */
+  abstract readonly __brand: string
   private static _queryInvoker: IQueryInvoker
 
   private static _interactiveQueryInvoker: IQueryInvoker

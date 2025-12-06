@@ -297,19 +297,31 @@ function transformDefineDepsDestructuring(code: string, ast: ASTProgram, ms: Mag
               }
             }
 
-            // Generate transformed code in one line for sourcemaps
+            // Generate transformed code preserving line count for sourcemaps
             if (propAliases.length > 0 && symbolValues.length === propAliases.length) {
               const tempVar = '__deps_' + Math.random().toString(36).substr(2, 9)
               const arrayArg = `[${symbolValues.join(', ')}]`
+              const astNode = n as ASTNode
 
-              // Everything in one line, to not shift sourcemaps
-              let replacement = `const ${tempVar} = ${decl.init.callee.name}(${arrayArg}); `
+              // Count original lines to preserve for sourcemaps
+              const originalCode = code.slice(astNode.start, astNode.end)
+              const originalLineCount = (originalCode.match(/\n/g) || []).length
+
+              // Build replacement lines
+              const lines: string[] = []
+              lines.push(`const ${tempVar} = ${decl.init.callee.name}(${arrayArg});`)
               propAliases.forEach((name, idx) => {
-                replacement += `const ${name} = ${tempVar}[${idx}]; `
+                lines.push(`const ${name} = ${tempVar}[${idx}];`)
               })
 
+              // Pad with empty lines if we have fewer lines than original
+              while (lines.length - 1 < originalLineCount) {
+                lines.push('')
+              }
+
+              const replacement = lines.join('\n')
+
               // Save the transformation for later application
-              const astNode = n as ASTNode
               transformations.push({
                 start: astNode.start,
                 end: astNode.end,
@@ -701,9 +713,9 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
       if (id === RESOLVED_VIRTUAL_IOC_DEPS_ID) {
         // Convert Map<string, Set<string>> to Record<string, string[]>
         const result: Record<string, string[]> = {}
-        for (const [moduleId, deps] of fileIocDeps) {
+        fileIocDeps.forEach((deps, moduleId) => {
           result[moduleId] = Array.from(deps)
-        }
+        })
         return `export const iocDepsByFile = ${JSON.stringify(result, null, 2)};`
       }
     },

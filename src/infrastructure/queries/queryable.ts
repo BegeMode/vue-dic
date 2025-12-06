@@ -5,9 +5,9 @@ import { isTest } from '@/utils/system'
 
 export type TQueryResult<T> = T extends IQuery<infer TResult> ? TResult : never
 
-function queryable<TQry extends IQuery<TResult>, TResult>(
+export function queryable<TQry extends IQuery<TResult, TBrand>, TResult, TBrand extends string>(
   query: { prototype: TQry; name: string },
-  action: TAction<TQry, TResult>
+  action: TAction<NoInfer<TQry>, NoInfer<TResult>>
 ) {
   if (
     !isTest() &&

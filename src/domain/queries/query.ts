@@ -1,4 +1,5 @@
-export interface IQuery<TResult = unknown> {
+export interface IQuery<TResult = unknown, TBrand extends string = string> {
+  readonly __brand: TBrand
   fromRemote?: boolean
   cancelable?: boolean
   uid?: string | number // unique identifier of the request (e.g. component uid )

@@ -1,15 +1,13 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { getQueryableFunc } from '@/infrastructure/queries/queryable'
+import { queryable } from '@/infrastructure/queries/queryable'
 import { MovieListQuery } from '@/domain/queries/movie.query'
 import type { Movie } from '@/domain/models/movie'
 import axios from 'axios'
 import { API_KEY, API_URL } from '@/infrastructure/stores/movies/config'
-import type { MoviesCommandQueryTypes } from '@/infrastructure/stores/movies/types'
+import { INFRA_DEPS } from '@/infrastructure/depIds'
 
-const queryable = getQueryableFunc<MoviesCommandQueryTypes>()
-
-export const useMoviesStore = defineStore('movies', ({ action }) => {
+const useMoviesStore = defineStore(INFRA_DEPS.MoviesStore.description!, ({ action }) => {
   const movies = ref<Array<Movie>>([])
 
   async function fetchList(query: MovieListQuery): Promise<Array<Movie>> {
@@ -35,3 +33,7 @@ export const useMoviesStore = defineStore('movies', ({ action }) => {
     fetchList: queryable(MovieListQuery, action(fetchList))
   }
 })
+
+export type MoviesStore = ReturnType<typeof useMoviesStore>
+
+export default useMoviesStore

@@ -1,6 +1,6 @@
 import 'reflect-metadata'
-import { type Container } from 'inversify'
-import { DepScope, DEPS_REGISTER, type IDep } from '@/infrastructure/ioc/types'
+import { type BindToFluentSyntax, type Container } from 'inversify'
+import { DepScope, DEPS_REGISTER, type IDep, DepType } from '@/infrastructure/ioc/types'
 
 function getDepsRegister(
   ioc: Container
@@ -72,7 +72,7 @@ export async function loadDeps(ids: symbol[], ioc: Container) {
   const loadedDeps = await Promise.all(promises)
   for (let i = 0; i < loadedDeps.length; i++) {
     const id = map[i]
-    if (ioc.isBound(id)) {
+    if (!id || ioc.isBound(id)) {
       continue
     }
     let loaded = loadedDeps[i]
@@ -98,12 +98,16 @@ export async function loadDeps(ids: symbol[], ioc: Container) {
 }
 
 export async function loadAndBindDeps(ids: symbol[], ioc: Container) {
-  await loadDeps(ids, ioc)
   const deps = getDepsRegister(ioc)
+  const depInfos: Record<symbol, IDep | InstanceType<any>> = {}
   for (const id of ids) {
-    const depInfo: IDep | InstanceType<any> = deps[id]
-    await bindDep(ioc, id, depInfo, depInfo.scope)
-    if (depInfo.autoCreate) {
+    depInfos[id] = deps[id]
+  }
+  await loadDeps(ids, ioc)
+  for (const id of ids) {
+    const dep = deps[id]
+    await bindDep(ioc, id, dep, depInfos[id].scope, depInfos[id].type)
+    if (dep.autoCreate) {
       ioc.get(id)
     }
   }
@@ -119,13 +123,14 @@ export async function loadAndBindDep(id: symbol, ioc: Container) {
     return
   }
   const scope = depInfo.scope
+  const type = depInfo.type
   const autoCreate = depInfo.autoCreate
   if (isDepObject(depInfo) || !depInfo.prototype) {
     // dep is not loaded yet, load it
     await loadDeps([id], ioc)
     depInfo = deps[id]
   }
-  await bindDep(ioc, id, depInfo, scope)
+  await bindDep(ioc, id, depInfo, scope, type)
   if (autoCreate) {
     ioc.get(id)
   }
@@ -162,9 +167,21 @@ function getDepsIdentifiers(target: Function, withOptional: boolean = false): un
 async function bindDep(
   ioc: Container,
   id: symbol,
-  dep: any,
-  depScope: DepScope = DepScope.SingletonScope
+  dep: InstanceType<any>,
+  depScope: DepScope = DepScope.SingletonScope,
+  type?: DepType
 ) {
+  if (!id) {
+    return
+  }
+  if(ioc.isBound(id)) {
+    return
+  }
+  if (type === DepType.Store) {
+    dep = dep()
+    ioc.bind(id).toConstantValue(dep)
+    return
+  }
   const binding = ioc.bind(id).to(dep)
   switch (depScope) {
     case DepScope.SingletonScope:

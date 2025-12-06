@@ -63,15 +63,17 @@ export default function viteChunksMapPlugin(userOptions: RouteDepsPluginOptions)
     staticImportsInRouter: new Map()
   }
 
+  let isBuild = false
+
   return {
     name: 'vite-chunks-map-plugin',
-    apply: 'build',
     enforce: 'post',
 
     // ============ Config ============
     
     configResolved(config) {
       state.config = config
+      isBuild = config.command === 'build'
     },
 
     // ============ Virtual Module ============
@@ -84,7 +86,11 @@ export default function viteChunksMapPlugin(userOptions: RouteDepsPluginOptions)
 
     load(id) {
       if (id === RESOLVED_VIRTUAL_ID) {
-        // Return placeholder - will be replaced in generateBundle
+        // In dev mode, return empty map (prefetching not needed)
+        if (!isBuild) {
+          return `export default {};`
+        }
+        // In build mode, return placeholder - will be replaced in generateBundle
         return `export default "${PLACEHOLDER}";`
       }
     },
@@ -92,7 +98,7 @@ export default function viteChunksMapPlugin(userOptions: RouteDepsPluginOptions)
     // ============ Build Start ============
     
     async buildStart() {
-      if (!state.config) return
+      if (!isBuild || !state.config) return
       
       const rootDir = state.config.root
       
@@ -135,6 +141,9 @@ export default function viteChunksMapPlugin(userOptions: RouteDepsPluginOptions)
     // ============ Transform: Collect Dynamic Imports ============
     
     async transform(code, id) {
+      // Skip in dev mode
+      if (!isBuild) return null
+      
       // Only process relevant files
       if (!shouldProcessFile(id)) return null
       
@@ -184,6 +193,9 @@ export default function viteChunksMapPlugin(userOptions: RouteDepsPluginOptions)
     // ============ Generate Bundle: Build Final Map ============
     
     generateBundle(_outputOptions, bundle) {
+      // Skip in dev mode (shouldn't reach here, but just in case)
+      if (!isBuild) return
+      
       // Import IoC deps from virtual module (collected by vite-inject-vue-deps-plugin)
       // We need to get this at generateBundle time when all transforms are done
       try {

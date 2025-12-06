@@ -182,7 +182,10 @@ function isNeedToLoadDeps(deps: Record<string, symbol> | undefined, ioc: Contain
   if (deps) {
     for (const key of Object.keys(deps)) {
       const depId = deps[key]
-      if (!ioc.isBound(depId) && isDepNeedToLoad(depId, ioc)) {
+      if (!depId) {
+        continue
+      }
+      if (!ioc.isBound(depId) && isDepNeedToLoad(depId!, ioc)) {
         return true
       }
     }
@@ -225,6 +228,9 @@ async function loadDeps(
   }
   for (const key of Object.keys(deps)) {
     const depId = deps[key]
+    if (!depId) {
+      continue
+    }
     let dep
     if (!ioc.isBound(depId)) {
       dep = await getServiceAsync(depId, ioc)
@@ -240,7 +246,7 @@ async function loadDeps(
 
 type TClass<T> = T extends Record<string, infer R> ? R : never
 
-export function defineDeps<T extends Record<string, any>>(deps: Record<keyof T, symbol>): T {
+export function defineDeps<T extends Record<string, any>>(deps: Record<keyof T, symbol | string>): T {
   return deps as any
 }
 
