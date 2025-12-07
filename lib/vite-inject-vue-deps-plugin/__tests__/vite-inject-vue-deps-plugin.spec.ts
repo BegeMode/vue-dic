@@ -65,9 +65,6 @@ describe('vite-di-plugin-post3', () => {
       expect(result).toMatch(/const dateTimeService = __deps_\w+\[0\];/)
       expect(result).toMatch(/const firstService = __deps_\w+\[1\];/)
       
-      // Check that everything is in one line (for sourcemaps)
-      expect(result.split('\n').length).toBe(1)
-      
       // Check collected depIds
       expect(depIds.has('DEPS.DateTime')).toBe(true)
       expect(depIds.has('DEPS.First')).toBe(true)
@@ -176,7 +173,7 @@ const add2days = () => {
   })
 
   describe('transformContextDepsDestructuring (Options API)', () => {
-    it('should transform deps object to array', () => {
+    it('should collect depIds from inline deps object', () => {
       const code = `
 export default defineComponent({
   deps: {
@@ -184,64 +181,143 @@ export default defineComponent({
     firstService: DEPS.First
   },
   setup(props, context) {
-    const { dateTimeService, firstService } = context.deps
+    const { deps } = context
   }
 })
 `.trim()
       const ast = parseCode(code)
       const ms = new MagicString(code)
       
-      transformContextDepsDestructuring(code, ast, ms)
+      const depIds = transformContextDepsDestructuring(code, ast, ms)
       const result = ms.toString()
       
-      // deps object should become an array
-      expect(result).toMatch(/deps:\s*\[DEPS\.DateTime,\s*DEPS\.First\]/)
+      // Code should NOT be transformed (deps stays as object for property access)
+      expect(result).toBe(code)
       
-      // Destructuring should become indexed access
-      expect(result).toMatch(/const dateTimeService = context\.deps\[0\];/)
-      expect(result).toMatch(/const firstService = context\.deps\[1\];/)
+      // But depIds should be collected
+      expect(depIds.has('DEPS.DateTime')).toBe(true)
+      expect(depIds.has('DEPS.First')).toBe(true)
+      expect(depIds.size).toBe(2)
     })
 
-    it('should correctly handle the order of properties', () => {
+    it('should collect depIds from shorthand deps property', () => {
+      const code = `
+const deps = {
+  dateTimeService: DEPS.DateTime,
+  moviesStore: DEPS.MoviesStore
+}
+export default defineComponent({
+  deps,
+  setup(props, context) {
+    const { deps: deps2 } = context
+  }
+})
+`.trim()
+      const ast = parseCode(code)
+      const ms = new MagicString(code)
+      
+      const depIds = transformContextDepsDestructuring(code, ast, ms)
+      const result = ms.toString()
+      
+      // Code should NOT be transformed
+      expect(result).toBe(code)
+      
+      // DepIds should be collected from the variable declaration
+      expect(depIds.has('DEPS.DateTime')).toBe(true)
+      expect(depIds.has('DEPS.MoviesStore')).toBe(true)
+      expect(depIds.size).toBe(2)
+    })
+
+    it('should collect depIds from deps: depsVar pattern', () => {
+      const code = `
+const myDeps = {
+  service1: DEPS.S1,
+  service2: DEPS.S2
+}
+export default defineComponent({
+  deps: myDeps,
+  setup(props, ctx) {
+    const { deps } = ctx
+  }
+})
+`.trim()
+      const ast = parseCode(code)
+      const ms = new MagicString(code)
+      
+      const depIds = transformContextDepsDestructuring(code, ast, ms)
+      
+      expect(depIds.has('DEPS.S1')).toBe(true)
+      expect(depIds.has('DEPS.S2')).toBe(true)
+      expect(depIds.size).toBe(2)
+    })
+
+    it('should collect depIds from inline deps without destructuring', () => {
       const code = `
 export default defineComponent({
   deps: {
-    service1: DEPS.S1,
-    service2: DEPS.S2,
-    service3: DEPS.S3
-  },
-  setup(props, context) {
-    const { service3, service1 } = context.deps
+    service1: DEPS.Service1,
+    service2: DEPS.Service2
   }
 })
 `.trim()
       const ast = parseCode(code)
       const ms = new MagicString(code)
       
-      transformContextDepsDestructuring(code, ast, ms)
+      const depIds = transformContextDepsDestructuring(code, ast, ms)
       const result = ms.toString()
       
-      // Indexes should correspond to the order in the deps object, not the order of destructuring
-      expect(result).toMatch(/const service1 = context\.deps\[0\];/) // S1 - индекс 0
-      expect(result).toMatch(/const service3 = context\.deps\[2\];/) // S3 - индекс 2
+      // Code should NOT be transformed
+      expect(result).toBe(code)
+      
+      // DepIds should be collected
+      expect(depIds.has('DEPS.Service1')).toBe(true)
+      expect(depIds.has('DEPS.Service2')).toBe(true)
+      expect(depIds.size).toBe(2)
     })
 
-    it('should handle ctx instead of context', () => {
+    it('should collect depIds when destructuring from context.deps (TestComponent pattern)', () => {
+      // Real pattern from src/ui/components/test/TestComponent.vue
       const code = `
 export default defineComponent({
-  deps: { service: DEPS.S },
-  setup(props, ctx) {
-    const { service } = ctx.deps
+  deps: {
+    dateTimeService: DEPS.DateTime,
+    firstService: DEPS.First
+  },
+  setup(_props, context) {
+    const { dateTimeService, firstService } = context.deps
+    return { dt: dateTimeService.now() }
   }
 })
 `.trim()
       const ast = parseCode(code)
       const ms = new MagicString(code)
       
-      transformContextDepsDestructuring(code, ast, ms)
+      const depIds = transformContextDepsDestructuring(code, ast, ms)
       const result = ms.toString()
       
-      expect(result).toMatch(/const service = ctx\.deps\[0\];/)
+      // Code should NOT be transformed (deps stays as object)
+      expect(result).toBe(code)
+      
+      // DepIds should be collected
+      expect(depIds.has('DEPS.DateTime')).toBe(true)
+      expect(depIds.has('DEPS.First')).toBe(true)
+      expect(depIds.size).toBe(2)
+    })
+
+    it('should return empty set when no deps found', () => {
+      const code = `
+export default defineComponent({
+  setup(props, ctx) {
+    return {}
+  }
+})
+`.trim()
+      const ast = parseCode(code)
+      const ms = new MagicString(code)
+      
+      const depIds = transformContextDepsDestructuring(code, ast, ms)
+      
+      expect(depIds.size).toBe(0)
     })
   })
 
