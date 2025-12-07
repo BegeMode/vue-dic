@@ -21,6 +21,10 @@ interface ParseIocMapsOptions {
  *   - [DEPS.X]: () => import('path')
  * 
  * Static deps like [DEPS.X]: SomeClass are IGNORED
+ * 
+ * Note: Both full depId (e.g. "INFRA_DEPS.MoviesStore") and normalized 
+ * property name (e.g. "MoviesStore") are stored to handle cases where
+ * DEPS = { ...INFRA_DEPS } re-exports symbols under different prefix.
  */
 export async function parseIocMaps(options: ParseIocMapsOptions): Promise<DepIdToDynamicImport> {
   const { iocMapFiles, rootDir, resolve: resolveId, devTelemetry } = options
@@ -54,7 +58,11 @@ export async function parseIocMaps(options: ParseIocMapsOptions): Promise<DepIdT
         try {
           const resolved = await resolveId(entry.importPath, absolutePath)
           if (resolved) {
+            // Store with full depId (e.g. "INFRA_DEPS.MoviesStore")
             result[entry.depId] = resolved.id
+            // Also store with just property name for cross-prefix matching
+            // e.g. "MoviesStore" so DEPS.MoviesStore can find INFRA_DEPS.MoviesStore
+            result[entry.propName] = resolved.id
           }
         } catch (e) {
           if (devTelemetry) {
@@ -73,8 +81,9 @@ export async function parseIocMaps(options: ParseIocMapsOptions): Promise<DepIdT
 }
 
 interface DepsEntry {
-  depId: string        // e.g. "DEPS.First"
-  importPath: string | null  // e.g. "@/ui/services/firstService"
+  depId: string        // e.g. "INFRA_DEPS.MoviesStore"
+  propName: string     // e.g. "MoviesStore" (for cross-prefix matching)
+  importPath: string | null  // e.g. "@/infrastructure/stores/movies/movies"
 }
 
 /**
@@ -113,6 +122,7 @@ function extractDepsEntriesWithRegex(code: string): DepsEntry[] {
     if (importMatch) {
       entries.push({
         depId,
+        propName,  // Store property name for cross-prefix matching
         importPath: importMatch[1]
       })
     }

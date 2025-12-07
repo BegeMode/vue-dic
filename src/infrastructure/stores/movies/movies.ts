@@ -7,7 +7,7 @@ import axios from 'axios'
 import { API_KEY, API_URL } from '@/infrastructure/stores/movies/config'
 import { INFRA_DEPS } from '@/infrastructure/depIds'
 
-const useMoviesStore = defineStore(INFRA_DEPS.MoviesStore.description!, ({ action }) => {
+const useMoviesStore = defineStore(INFRA_DEPS.MoviesStore, ({ action }) => {
   const movies = ref<Array<Movie>>([])
 
   async function fetchList(query: MovieListQuery): Promise<Array<Movie>> {

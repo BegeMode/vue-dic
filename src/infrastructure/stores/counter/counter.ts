@@ -8,7 +8,7 @@ import { commandable } from '@/infrastructure/queries/commandable'
 import { delay } from '@/utils/delay'
 import { INFRA_DEPS } from '@/infrastructure/depIds'
 
-const useCounterStore = defineStore(INFRA_DEPS.CounterStore.description!, ({ action }) => {
+const useCounterStore = defineStore(INFRA_DEPS.CounterStore, ({ action }) => {
   const count = ref(0)
   const doubleCount = computed(() => count.value * 2)
 

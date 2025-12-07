@@ -24,13 +24,16 @@ import { defineComponent, ref, watch } from 'vue'
 import LoadingSpinner from '@/ui/components/LoadingSpinner.vue'
 import type { DateTimeService } from '@/application/dateTimeService'
 import { DEPS } from '@/ui/depIds'
+import type { MoviesStore } from '@/infrastructure/stores/movies/movies'
 
 type TDeps = {
   dateTimeService: DateTimeService;
+  moviesStore: MoviesStore;
 }
 
 const deps: TDepIds<TDeps> = {
   dateTimeService: DEPS.DateTime,
+  moviesStore: DEPS.MoviesStore,
 }
 
 export default defineComponent({

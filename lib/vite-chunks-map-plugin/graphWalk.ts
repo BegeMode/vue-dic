@@ -88,7 +88,14 @@ export function walkModuleGraph(options: GraphWalkOptions): RouteGraphResult {
     if (iocDeps) {
       for (const depId of iocDeps) {
         // Only process dynamic IoC deps
-        const dynamicImportPath = depIdToDynamicImport[depId]
+        // Try exact match first, then try by property name only
+        // e.g. "DEPS.MoviesStore" -> try "DEPS.MoviesStore", then "MoviesStore"
+        let dynamicImportPath = depIdToDynamicImport[depId]
+        if (!dynamicImportPath && depId.includes('.')) {
+          const propName = depId.split('.').pop()!
+          dynamicImportPath = depIdToDynamicImport[propName]
+        }
+        
         if (dynamicImportPath) {
           dynamicTargets.add(dynamicImportPath)
           // Also traverse into IoC dynamic import

@@ -379,108 +379,74 @@ function transformDefineDepsDestructuring(code: string, ast: ASTProgram, ms: Mag
 }
 
 /** 
- * Transforms destructuring of context.deps into indexed access for minimization
- * One pass through AST (optimization!)
+ * Collects depIds from defineComponent({ deps: {...} }) or defineComponent({ deps })
+ * For Options API we only collect depIds, we don't transform deps to array
+ * because the code accesses deps by property name (e.g. deps.dateTimeService)
  * Returns collected depIds (e.g. "DEPS.DateTime", "DEPS.First")
  */
-function transformContextDepsDestructuring(code: string, ast: ASTProgram, ms: MagicString): Set<string> {
-  const transformations: Array<{ start: number; end: number; replacement: string }> = []
-  let depsObjectPropNames: string[] = []
+function transformContextDepsDestructuring(code: string, ast: ASTProgram, _ms: MagicString): Set<string> {
   const allDepIds = new Set<string>()  // Collect all depIds
 
-  // One pass - we seek the deps object AND destructuring of context.deps
+  // Helper: find variable declaration by name in the AST
+  const findVariableValue = (varName: string): ASTNode | null => {
+    for (const n of ast.body) {
+      if (n.type === 'VariableDeclaration') {
+        for (const decl of (n as any).declarations || []) {
+          if (decl.id?.type === 'Identifier' && decl.id.name === varName && decl.init) {
+            return decl.init as ASTNode
+          }
+        }
+      }
+    }
+    return null
+  }
+
+  // Helper: extract depIds from ObjectExpression node
+  const extractDepsFromObject = (objNode: ASTNode): void => {
+    const depsProps = (objNode as any).properties || []
+
+    for (const prop of depsProps) {
+      if (prop.type === 'Property' && prop.key?.type === 'Identifier') {
+        const depId = code.slice(prop.value.start, prop.value.end)
+        allDepIds.add(depId)  // ✅ Collect depId
+      }
+    }
+  }
+
+  // One pass - we seek the deps object to collect depIds
   walk(ast, {
     enter(n: Node) {
-      // 1) We seek: defineComponent({ deps: { ... } })
+      // We seek: defineComponent({ deps: { ... } }) or defineComponent({ deps })
       if (n.type === 'CallExpression' && isDefineComponentCall(n)) {
         const arg0 = (n as any).arguments?.[0]
         if (arg0?.type === 'ObjectExpression') {
           const depsProperty = arg0.properties?.find(
-            (p: any) => p.type === 'Property' && p.key?.name === 'deps'
+            (p: any) => p.type === 'Property' && 
+              (p.key?.name === 'deps' || (p.key?.type === 'Identifier' && p.key.name === 'deps'))
           )
-          if (depsProperty && depsProperty.value?.type === 'ObjectExpression') {
-            // Extract names and values from the deps object
-            const depsProps = depsProperty.value.properties || []
-            const propNames: string[] = []
-            const symbolValues: string[] = []
+          
+          if (depsProperty) {
+            let depsObjectNode: ASTNode | null = null
 
-            for (const prop of depsProps) {
-              if (prop.type === 'Property' && prop.key?.type === 'Identifier') {
-                propNames.push(prop.key.name)
-                const depId = code.slice(prop.value.start, prop.value.end)
-                symbolValues.push(depId)
-                allDepIds.add(depId)  // ✅ Collect depId
+            if (depsProperty.value?.type === 'ObjectExpression') {
+              // Inline object: deps: { foo: DEPS.Foo }
+              depsObjectNode = depsProperty.value
+            } else if (depsProperty.value?.type === 'Identifier') {
+              // Reference to variable: deps or deps: depsVar
+              const depsVarName = depsProperty.value.name
+              if (depsVarName) {
+                depsObjectNode = findVariableValue(depsVarName)
               }
             }
 
-            if (propNames.length > 0) {
-              depsObjectPropNames = propNames // Save the order for destructuring
-
-              // Transform the deps object into an array
-              const arrayValue = `[${symbolValues.join(', ')}]`
-              transformations.push({
-                start: depsProperty.value.start,
-                end: depsProperty.value.end,
-                replacement: arrayValue
-              })
+            if (depsObjectNode && depsObjectNode.type === 'ObjectExpression') {
+              extractDepsFromObject(depsObjectNode)
             }
-          }
-        }
-      }
-
-      // 2) We seek: const { prop1, prop2, ... } = context.deps or ctx.deps
-      if (n.type === 'VariableDeclaration' && n.declarations && n.declarations.length === 1) {
-        const decl = n.declarations[0] as any
-
-        // Check destructuring from context.deps
-        if (
-          decl.id?.type === 'ObjectPattern' &&
-          decl.init?.type === 'MemberExpression' &&
-          decl.init.property?.type === 'Identifier' &&
-          decl.init.property.name === 'deps'
-        ) {
-          const properties = decl.id.properties || []
-
-          // Extract property names from destructuring
-          const propNames: string[] = []
-          for (const prop of properties) {
-            if (prop.type === 'Property' && prop.value?.type === 'Identifier') {
-              propNames.push(prop.value.name)
-            }
-          }
-
-          // Generate transformed code using the order from the deps object
-          if (propNames.length > 0 && depsObjectPropNames.length > 0) {
-            const contextExpr = code.slice(decl.init.object.start, decl.init.object.end)
-
-            let replacement = ''
-            propNames.forEach((name) => {
-              // Find the index in the original order of the deps object
-              const idx = depsObjectPropNames.indexOf(name)
-              if (idx !== -1) {
-                replacement += `const ${name} = ${contextExpr}.deps[${idx}];\n`
-              }
-            })
-
-            // Save the transformation for later application
-            const astNode = n as ASTNode
-            transformations.push({
-              start: astNode.start,
-              end: astNode.end,
-              replacement
-            })
           }
         }
       }
     }
   })
-
-  // Apply transformations in reverse order (from end to start)
-  transformations
-    .sort((a, b) => b.start - a.start)
-    .forEach((t) => {
-      ms.overwrite(t.start, t.end, t.replacement)
-    })
 
   return allDepIds
 }
@@ -716,6 +682,9 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
         fileIocDeps.forEach((deps, moduleId) => {
           result[moduleId] = Array.from(deps)
         })
+        if (opts.devTelemetry) {
+          console.log(`[${PluginName}] iocDepsByFile loaded:`, result)
+        }
         return `export const iocDepsByFile = ${JSON.stringify(result, null, 2)};`
       }
     },
@@ -823,6 +792,9 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
       // ✅ Store collected depIds for ioc-deps-graph virtual module
       if (allDepIds.size > 0) {
         fileIocDeps.set(cleanId, allDepIds)
+        if (opts.devTelemetry) {
+          console.log(`[${PluginName}] collected depIds for ${cleanId}:`, Array.from(allDepIds))
+        }
       }
 
       // 1) Cut the default export expression and get the component name

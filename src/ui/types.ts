@@ -10,5 +10,5 @@ export interface IDeps {
 }
 
 export type TDepIds<T = IDeps> = {
-  [K in keyof T]: symbol
+  [K in keyof T]: symbol | string
 }
