@@ -379,12 +379,22 @@ function transformDefineDepsDestructuring(code: string, ast: ASTProgram, ms: Mag
 }
 
 /** 
- * Collects depIds from defineComponent({ deps: {...} }) or defineComponent({ deps })
- * For Options API we only collect depIds, we don't transform deps to array
- * because the code accesses deps by property name (e.g. deps.dateTimeService)
+ * Transforms deps for Options API (defineComponent) for better minification.
+ * 
+ * For INLINE deps with matching destructuring pattern:
+ *   deps: { foo: DEPS.Foo } → deps: [DEPS.Foo]
+ *   const { foo } = ctx.deps → const foo = ctx.deps[0]
+ * 
+ * For SHORTHAND deps (variable reference) - only collects depIds, no transformation
+ * because we can't safely transform all usages of the variable.
+ * 
  * Returns collected depIds (e.g. "DEPS.DateTime", "DEPS.First")
  */
-function transformContextDepsDestructuring(code: string, ast: ASTProgram, _ms: MagicString): Set<string> {
+function transformContextDepsDestructuring(code: string, ast: ASTProgram, ms: MagicString): Set<string> {
+  const transformations: Array<{ start: number; end: number; replacement: string }> = []
+  let depsObjectPropNames: string[] = []
+  let isInlineDeps = false  // Track if deps is inline (not a variable reference)
+  let inlineDepsNode: ASTNode | null = null  // The inline deps ObjectExpression node
   const allDepIds = new Set<string>()  // Collect all depIds
 
   // Helper: find variable declaration by name in the AST
@@ -401,22 +411,27 @@ function transformContextDepsDestructuring(code: string, ast: ASTProgram, _ms: M
     return null
   }
 
-  // Helper: extract depIds from ObjectExpression node
-  const extractDepsFromObject = (objNode: ASTNode): void => {
+  // Helper: extract depIds and prop names from ObjectExpression node
+  const extractDepsFromObject = (objNode: ASTNode): { propNames: string[]; symbolValues: string[] } => {
+    const propNames: string[] = []
+    const symbolValues: string[] = []
     const depsProps = (objNode as any).properties || []
 
     for (const prop of depsProps) {
       if (prop.type === 'Property' && prop.key?.type === 'Identifier') {
+        propNames.push(prop.key.name)
         const depId = code.slice(prop.value.start, prop.value.end)
+        symbolValues.push(depId)
         allDepIds.add(depId)  // ✅ Collect depId
       }
     }
+    return { propNames, symbolValues }
   }
 
-  // One pass - we seek the deps object to collect depIds
+  // One pass - we seek the deps object AND destructuring of context.deps
   walk(ast, {
     enter(n: Node) {
-      // We seek: defineComponent({ deps: { ... } }) or defineComponent({ deps })
+      // 1) We seek: defineComponent({ deps: { ... } }) or defineComponent({ deps })
       if (n.type === 'CallExpression' && isDefineComponentCall(n)) {
         const arg0 = (n as any).arguments?.[0]
         if (arg0?.type === 'ObjectExpression') {
@@ -431,22 +446,98 @@ function transformContextDepsDestructuring(code: string, ast: ASTProgram, _ms: M
             if (depsProperty.value?.type === 'ObjectExpression') {
               // Inline object: deps: { foo: DEPS.Foo }
               depsObjectNode = depsProperty.value
+              isInlineDeps = true
+              inlineDepsNode = depsObjectNode
             } else if (depsProperty.value?.type === 'Identifier') {
               // Reference to variable: deps or deps: depsVar
               const depsVarName = depsProperty.value.name
               if (depsVarName) {
                 depsObjectNode = findVariableValue(depsVarName)
               }
+              isInlineDeps = false  // Can't safely transform variable references
             }
 
             if (depsObjectNode && depsObjectNode.type === 'ObjectExpression') {
-              extractDepsFromObject(depsObjectNode)
+              const { propNames, symbolValues } = extractDepsFromObject(depsObjectNode)
+              if (propNames.length > 0) {
+                depsObjectPropNames = propNames  // Save order for destructuring transformation
+                
+                // Only transform inline deps (will be applied if destructuring is found)
+                if (isInlineDeps && inlineDepsNode) {
+                  const arrayValue = `[${symbolValues.join(', ')}]`
+                  transformations.push({
+                    start: inlineDepsNode.start,
+                    end: inlineDepsNode.end,
+                    replacement: arrayValue
+                  })
+                }
+              }
             }
+          }
+        }
+      }
+
+      // 2) We seek: const { prop1, prop2, ... } = context.deps or ctx.deps
+      // Only transform if deps was inline (not a variable reference)
+      if (isInlineDeps && n.type === 'VariableDeclaration' && n.declarations && n.declarations.length === 1) {
+        const decl = n.declarations[0] as any
+
+        // Check destructuring from context.deps
+        if (
+          decl.id?.type === 'ObjectPattern' &&
+          decl.init?.type === 'MemberExpression' &&
+          decl.init.property?.type === 'Identifier' &&
+          decl.init.property.name === 'deps'
+        ) {
+          const properties = decl.id.properties || []
+
+          // Extract property names from destructuring
+          const propNames: string[] = []
+          for (const prop of properties) {
+            if (prop.type === 'Property' && prop.value?.type === 'Identifier') {
+              propNames.push(prop.value.name)
+            }
+          }
+
+          // Generate transformed code using the order from the deps object
+          if (propNames.length > 0 && depsObjectPropNames.length > 0) {
+            const contextExpr = code.slice(decl.init.object.start, decl.init.object.end)
+
+            let replacement = ''
+            propNames.forEach((name) => {
+              // Find the index in the original order of the deps object
+              const idx = depsObjectPropNames.indexOf(name)
+              if (idx !== -1) {
+                replacement += `const ${name} = ${contextExpr}.deps[${idx}];\n`
+              }
+            })
+
+            // Save the transformation for later application
+            const astNode = n as ASTNode
+            transformations.push({
+              start: astNode.start,
+              end: astNode.end,
+              replacement
+            })
           }
         }
       }
     }
   })
+
+  // Only apply transformations if we have BOTH deps transformation AND destructuring transformation
+  // This ensures we don't break code by only transforming one half
+  const hasDepsTransform = transformations.some(t => t.replacement.startsWith('['))
+  const hasDestructuringTransform = transformations.some(t => t.replacement.includes('= ') && t.replacement.includes('.deps['))
+  
+  if (hasDepsTransform && hasDestructuringTransform) {
+    // Apply transformations in reverse order (from end to start)
+    transformations
+      .sort((a, b) => b.start - a.start)
+      .forEach((t) => {
+        ms.overwrite(t.start, t.end, t.replacement)
+      })
+  }
 
   return allDepIds
 }

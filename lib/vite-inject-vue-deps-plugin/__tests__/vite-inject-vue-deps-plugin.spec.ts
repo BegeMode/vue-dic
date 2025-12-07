@@ -275,8 +275,9 @@ export default defineComponent({
       expect(depIds.size).toBe(2)
     })
 
-    it('should collect depIds when destructuring from context.deps (TestComponent pattern)', () => {
+    it('should transform inline deps with destructuring from context.deps (TestComponent pattern)', () => {
       // Real pattern from src/ui/components/test/TestComponent.vue
+      // For INLINE deps with matching destructuring → transform for minification
       const code = `
 export default defineComponent({
   deps: {
@@ -295,13 +296,59 @@ export default defineComponent({
       const depIds = transformContextDepsDestructuring(code, ast, ms)
       const result = ms.toString()
       
-      // Code should NOT be transformed (deps stays as object)
-      expect(result).toBe(code)
+      // deps object should become an array (for minification)
+      expect(result).toMatch(/deps:\s*\[DEPS\.DateTime,\s*DEPS\.First\]/)
+      
+      // Destructuring should become indexed access
+      expect(result).toMatch(/const dateTimeService = context\.deps\[0\];/)
+      expect(result).toMatch(/const firstService = context\.deps\[1\];/)
       
       // DepIds should be collected
       expect(depIds.has('DEPS.DateTime')).toBe(true)
       expect(depIds.has('DEPS.First')).toBe(true)
       expect(depIds.size).toBe(2)
+    })
+
+    it('should correctly handle the order of properties in transformation', () => {
+      const code = `
+export default defineComponent({
+  deps: {
+    service1: DEPS.S1,
+    service2: DEPS.S2,
+    service3: DEPS.S3
+  },
+  setup(props, context) {
+    const { service3, service1 } = context.deps
+  }
+})
+`.trim()
+      const ast = parseCode(code)
+      const ms = new MagicString(code)
+      
+      transformContextDepsDestructuring(code, ast, ms)
+      const result = ms.toString()
+      
+      // Indexes should correspond to the order in the deps object, not the order of destructuring
+      expect(result).toMatch(/const service1 = context\.deps\[0\];/)  // S1 - index 0
+      expect(result).toMatch(/const service3 = context\.deps\[2\];/)  // S3 - index 2
+    })
+
+    it('should handle ctx instead of context', () => {
+      const code = `
+export default defineComponent({
+  deps: { service: DEPS.S },
+  setup(props, ctx) {
+    const { service } = ctx.deps
+  }
+})
+`.trim()
+      const ast = parseCode(code)
+      const ms = new MagicString(code)
+      
+      transformContextDepsDestructuring(code, ast, ms)
+      const result = ms.toString()
+      
+      expect(result).toMatch(/const service = ctx\.deps\[0\];/)
     })
 
     it('should return empty set when no deps found', () => {
