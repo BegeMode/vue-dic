@@ -2,7 +2,6 @@ import type { Plugin } from 'vite'
 import MagicString from 'magic-string'
 import { walk } from 'estree-walker'
 import { relative } from 'path'
-import { readFileSync, writeFileSync } from 'fs'
 import type {
   Node,
   Program,
@@ -246,7 +245,11 @@ function injectDepsFromDefineDepsPost(
  * Transforms destructuring of defineDeps into indexed access for minimization
  * And collects all depIds (optimization - one pass through AST)
  */
-function transformDefineDepsDestructuring(code: string, ast: ASTProgram, ms: MagicString): Set<string> {
+function transformDefineDepsDestructuring(
+  code: string, 
+  ast: ASTProgram, 
+  ms: MagicString
+): Set<string> {
   const localNames = collectLocalDefineDepsNames(ast)
   const transformations: Array<{ start: number; end: number; replacement: string }> = []
   const allDepIds = new Set<string>()  // Collect all depIds
@@ -390,7 +393,11 @@ function transformDefineDepsDestructuring(code: string, ast: ASTProgram, ms: Mag
  * 
  * Returns collected depIds (e.g. "DEPS.DateTime", "DEPS.First")
  */
-function transformContextDepsDestructuring(code: string, ast: ASTProgram, ms: MagicString): Set<string> {
+function transformContextDepsDestructuring(
+  code: string, 
+  ast: ASTProgram, 
+  ms: MagicString
+): Set<string> {
   const transformations: Array<{ start: number; end: number; replacement: string }> = []
   let depsObjectPropNames: string[] = []
   let isInlineDeps = false  // Track if deps is inline (not a variable reference)
@@ -622,21 +629,27 @@ function getExportComponentName(
       compName = decl.name
     } else if (decl.type === 'CallExpression' && isDefineComponentCall(decl)) {
       // export default defineComponent({...})  →  const __di_comp = defineComponent({...}); export default __di_comp;
+      // Use surgical edits to preserve sourcemap mappings for the component body
       const name = makeUnique(defName)
-      const start = defaultExportNode.start!
-      const end = defaultExportNode.end!
-      const defExpr = code.slice(decl.start!, decl.end!)
-      const replacement = `const ${name} = ${defExpr};\nexport default ${name};`
-      ms.overwrite(start, end, replacement)
+      const exportStart = defaultExportNode.start!  // start of "export"
+      const declStart = decl.start!                 // start of "defineComponent("
+      const exportEnd = defaultExportNode.end!      // after the final ";" or ")"
+      
+      // 1) Replace "export default /* @__PURE__ */ " with "const _di_comp = "
+      ms.overwrite(exportStart, declStart, `const ${name} = `)
+      // 2) Append "export default _di_comp;" after the statement
+      ms.appendRight(exportEnd, `\nexport default ${name};`)
       compName = name
     } else {
       // just in case: export default { ... }  (unlikely after plugin-vue, but support)
+      // Use surgical edits to preserve sourcemap mappings
       const name = makeUnique('__di_comp')
-      const start = defaultExportNode.start!
-      const end = defaultExportNode.end!
-      const defExpr = code.slice(decl.start!, decl.end!)
-      const replacement = `const ${name} = ${defExpr};\nexport default ${name};`
-      ms.overwrite(start, end, replacement)
+      const exportStart = defaultExportNode.start!
+      const declStart = decl.start!
+      const exportEnd = defaultExportNode.end!
+      
+      ms.overwrite(exportStart, declStart, `const ${name} = `)
+      ms.appendRight(exportEnd, `\nexport default ${name};`)
       compName = name
     }
   }
@@ -838,7 +851,7 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
       let allDepIds = new Set<string>()
       if (scan.kind === 'script-setup') {
         const before = s.toString()
-        allDepIds = transformDefineDepsDestructuring(code, ast, s)  // ✅ Get depIds
+        allDepIds = transformDefineDepsDestructuring(code, ast, s)
         const after = s.toString()
         if (before !== after) {
           // Re-parse transformed code to get correct positions
@@ -846,7 +859,7 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
           try {
             ast = this.parse(transformedCode) as ASTProgram
             code = transformedCode // Update code for subsequent operations
-            // ❗ Create NEW MagicString from transformedCode!
+            // Create NEW MagicString from transformedCode for correct position handling
             s = new MagicString(code, { filename: relativeId })
           } catch (e) {
             if (opts.devTelemetry) {
@@ -859,7 +872,7 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
         }
       } else if (scan.kind === 'options') {
         const before = s.toString()
-        allDepIds = transformContextDepsDestructuring(code, ast, s)  // ✅ Get depIds
+        allDepIds = transformContextDepsDestructuring(code, ast, s)
         const after = s.toString()
         if (before !== after) {
           // Re-parse transformed code
@@ -867,7 +880,7 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
           try {
             ast = this.parse(transformedCode) as ASTProgram
             code = transformedCode
-            // ❗ Create NEW MagicString from transformedCode!
+            // Create NEW MagicString from transformedCode for correct position handling
             s = new MagicString(code, { filename: relativeId })
           } catch (e) {
             if (opts.devTelemetry) {
@@ -961,87 +974,21 @@ export default function diVitePostPlugin(userOpts: DIPluginOptions): Plugin {
 
       const result = s.toString()
 
-      // Generate sourcemap through MagicString, which tracks all our changes
+      // Generate sourcemap through MagicString for tracking our changes
+      // Let Vite handle the chaining - just provide accurate mappings
       const ourMap = s.generateMap({
-        source: existingSourceMap.sources[0] || relativeId,
+        source: relativeId,
         file: relativeId,
         hires: true,
         includeContent: true
       })
 
-      // Replace sourcesContent with the original from Vue
-      ourMap.sourcesContent = existingSourceMap.sourcesContent
-
-      // In production save the original Vue sourcemap for writeBundle
-      if (isProduction) {
-        transformedSourceMaps.set(cleanId, {
-          map: existingSourceMap, // Original from Vue
-          relativeId: relativeId
-        })
-
-        return {
-          code: result,
-          map: null
-        }
-      }
-
-      // Dev: return our sourcemap
+      // Return our sourcemap - Vite/Rollup will chain it automatically
       return {
         code: result,
         map: ourMap as any
       }
     },
-
-    // generateBundle hook
-    generateBundle(options, bundle) {
-      if (!isProduction) return
-
-      const filesToFix: Array<{ fileName: string; mapData: any }> = []
-
-      for (const [fileName, chunk] of Object.entries(bundle)) {
-        if (chunk.type === 'chunk') {
-          for (const moduleId of Object.keys(chunk.modules || {})) {
-            const cleanModuleId = moduleId.split('?')[0]
-            const savedMap = transformedSourceMaps.get(cleanModuleId)
-
-            if (savedMap && savedMap.map?.sourcesContent?.length > 0) {
-              filesToFix.push({
-                fileName: fileName + '.map',
-                mapData: savedMap
-              })
-              break
-            }
-          }
-        }
-      }
-
-      ;(this as any)._filesToFix = filesToFix
-    },
-
-    // writeBundle hook - restore sources and sourcesContent
-    writeBundle(options) {
-      if (!isProduction) return
-
-      const filesToFix = (this as any)._filesToFix || []
-      if (filesToFix.length === 0) return
-
-      const outDir = options.dir || 'dist'
-
-      for (const { fileName, mapData } of filesToFix) {
-        try {
-          const mapPath = `${outDir}/${fileName}`
-          const minifiedMap = JSON.parse(readFileSync(mapPath, 'utf-8'))
-
-          // Restore sources and sourcesContent from Vue
-          minifiedMap.sources = mapData.map.sources
-          minifiedMap.sourcesContent = mapData.map.sourcesContent
-
-          writeFileSync(mapPath, JSON.stringify(minifiedMap))
-        } catch (e) {
-          // Ignore errors
-        }
-      }
-    }
   }
 }
 
