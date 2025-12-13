@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue'
+import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { commandable } from '@/infrastructure/queries/commandable'
 import { DateUpdateCommand } from '@/domain/commands/date.command'

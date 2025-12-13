@@ -4,7 +4,7 @@ import { DepScope, DEPS_REGISTER, type IDep, DepType } from '@/infrastructure/io
 
 function getDepsRegister(
   ioc: Container
-): Record<symbol, IDep | InstanceType<any> | (() => InstanceType<any>)> {
+): Record<string | symbol, IDep | InstanceType<any> | (() => InstanceType<any>)> {
   try {
     return ioc.get(DEPS_REGISTER)
   } catch (e) {
@@ -47,10 +47,10 @@ export function isDepNeedToLoad(id: symbol, ioc: Container): boolean {
   return false
 }
 
-export async function loadDeps(ids: symbol[], ioc: Container) {
+export async function loadDeps(ids: (string | symbol)[], ioc: Container) {
   const deps = getDepsRegister(ioc)
   const promises = []
-  const map: Record<number, symbol> = {}
+  const map: Record<number, string | symbol> = {}
   for (const id of ids) {
     if (ioc.isBound(id)) {
       continue
@@ -113,7 +113,7 @@ export async function loadAndBindDeps(ids: symbol[], ioc: Container) {
   }
 }
 
-export async function loadAndBindDep(id: symbol, ioc: Container) {
+export async function loadAndBindDep(id: symbol | string, ioc: Container) {
   if (ioc.isBound(id)) {
     return
   }
@@ -166,7 +166,7 @@ function getDepsIdentifiers(target: Function, withOptional: boolean = false): un
 
 async function bindDep(
   ioc: Container,
-  id: symbol,
+  id: string | symbol,
   dep: InstanceType<any>,
   depScope: DepScope = DepScope.SingletonScope,
   type?: DepType
@@ -204,11 +204,11 @@ async function bindDep(
   }
 }
 
-export function getService<T>(id: symbol, ioc: Container) {
+export function getService<T>(id: symbol | string, ioc: Container) {
   return ioc.get(id) as T
 }
 
-export async function getServiceAsync<T>(id: symbol, ioc: Container) {
+export async function getServiceAsync<T>(id: symbol | string, ioc: Container) {
   try {
     if (!ioc.isBound(id)) {
       await loadAndBindDep(id, ioc)

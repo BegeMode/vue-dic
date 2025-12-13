@@ -18,7 +18,7 @@ type CommandsMap = Map<CommandClass, string>
 2. Автоматически находит связи:
    - вызовы `queryable(QueryClass, action(...))` внутри store → добавляет в QueriesMap
    - вызовы `commandable(CommandClass, action(...))` внутри store → добавляет в CommandsMap
-   - Store ID из `defineStore(INFRA_DEPS.StoreName, ...)` или `defineStore(STORE_ID, ...)`
+   - Store ID из `defineStore(INFRA_DEPS.StoreName, ...)` или `defineStore('storeName', ...)`
 
 3. Генерирует **два виртуальных модуля**:
    ```ts
@@ -74,9 +74,9 @@ export interface CqrsRegisterPluginOptions {
   storePattern?: string  // default: '**/[!_]*.ts' (исключает _*.ts)
 
   /** Исключаемые файлы/папки (glob patterns) */
-  exclude?: string[]  // default: ['**/__tests__/**', '**/loader.ts', '**/types.ts']
+  exclude?: string[]  // default: ['**/__tests__/**', '**/loader.ts', '**/types.ts', '**/config.ts', '**/register.ts']
 
-  /** Массив путей к TS-файлам с export const deps = ... */
+  /** Массив путей к TS-файлам с export const DEPS = { ... } */
   depIdsFiles: string[]
 
   /** Имя виртуального модуля для queries */
@@ -100,12 +100,70 @@ export interface CqrsRegisterPluginOptions {
 - `fast-glob` — поиск файлов по паттерну
 
 
-## 2. Структура store-файла (что анализируем)
+## 2. Структура depIds файлов (откуда берём Store ID)
 
-### 2.1. Типичный store
+### 2.1. Общая идея
+
+Плагин **один раз** при старте читает все указанные `depIdsFiles` и строит единую карту `key → value`. Эта карта используется для резолва Store ID во всех store-файлах.
+
+### 2.2. Формат depIds файлов
+
+Плагин парсит TypeScript файлы с объявлениями констант. Извлекаются только **явные свойства со строковыми значениями**:
+
+```ts
+// src/infrastructure/depIds.ts
+import { APP_DEPS } from '@/application/depIds'
+
+export const INFRA_DEPS = {
+  ...APP_DEPS,                    // ← игнорируется (spread)
+  MoviesStore: 'MoviesStore',     // ← извлекается
+  CounterStore: 'CounterStore',   // ← извлекается
+  DateStore: 'DateStore',         // ← извлекается
+} as const
+```
+
+### 2.3. Что извлекаем из depIds
+
+Для каждого depIds файла строим карту `ConstName.PropertyName → string value`:
+
+```ts
+// Из INFRA_DEPS = { MoviesStore: 'MoviesStore', CounterStore: 'CounterStore' }
+// Получаем:
+depIdsMap['INFRA_DEPS.MoviesStore'] = 'MoviesStore'
+depIdsMap['INFRA_DEPS.CounterStore'] = 'CounterStore'
+depIdsMap['INFRA_DEPS.DateStore'] = 'DateStore'
+```
+
+### 2.4. Обработка spread operator
+
+Если встречается `...APP_DEPS`, плагин **НЕ резолвит** импорты рекурсивно. Spread просто игнорируется.
+
+Это означает, что нужно указывать в `depIdsFiles` только те файлы, где Store ID определены **явно** (не через spread).
+
+### 2.5. Практическая рекомендация
+
+В проекте stores используют `INFRA_DEPS.CounterStore`, и Store ID определены явно в `src/infrastructure/depIds.ts`. 
+
+Поэтому **достаточно указать один файл**:
+
+```ts
+depIdsFiles: ['src/infrastructure/depIds.ts']
+```
+
+Если в будущем Store ID будут определяться в других файлах — добавить их в массив.
+
+### 2.6. Порядок обработки (если несколько файлов)
+
+Файлы обрабатываются в порядке массива. Если один и тот же ключ встречается в нескольких файлах — используется значение из **последнего** файла.
+
+
+## 3. Структура store-файла (что анализируем)
+
+### 3.1. Типичный store
 
 ```ts
 // src/infrastructure/stores/counter/counter.ts
+import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { queryable } from '@/infrastructure/queries/queryable'
 import { commandable } from '@/infrastructure/queries/commandable'
@@ -114,94 +172,250 @@ import { IncrementCommand } from '@/domain/commands/increment.command'
 import { INFRA_DEPS } from '@/infrastructure/depIds'
 
 const useCounterStore = defineStore(INFRA_DEPS.CounterStore, ({ action }) => {
-  // ...
+  const count = ref(0)
+  const doubleCount = computed(() => count.value * 2)
+
+  async function increment1(_query: CurrentUserQuery): Promise<User> {
+    count.value++
+    return new User()
+  }
+
+  async function increment(cmd: IncrementCommand): Promise<void> {
+    count.value += cmd.step
+    return Promise.resolve()
+  }
+
   return {
+    count,
+    doubleCount,
     increment: commandable(IncrementCommand, action(increment)),
     increment1: queryable(CurrentUserQuery, action(increment1))
   }
 })
+
+export default useCounterStore
 ```
 
-### 2.2. Что извлекаем
+### 3.2. Что извлекаем из store файла
 
-1. **Store ID** — первый аргумент `defineStore()`:
-   - `INFRA_DEPS.CounterStore` → извлекаем `INFRA_DEPS.CounterStore`
-   - `INFRA_DEPS.CounterStore` → используем как есть
-   - `'counter'` (строковый литерал) → используем как есть`
+1. **Store ID expression** — первый аргумент `defineStore()`:
+   - `MemberExpression`: `INFRA_DEPS.CounterStore` → строка `"INFRA_DEPS.CounterStore"`
+   - `Literal`: `'counter'` → строка `"'counter'"`
 
-2. **Query классы** — первый аргумент `queryable()`
+2. **Query классы** — первый аргумент каждого `queryable()` вызова
 
-3. **Command классы** — первый аргумент `commandable()`
+3. **Command классы** — первый аргумент каждого `commandable()` вызова
 
 4. **Import paths** — откуда импортированы Query/Command классы
 
+### 3.3. Множественные queryable/commandable в одном store
 
-## 3. Алгоритм работы плагина
+Один store может содержать **несколько** `queryable()` и `commandable()` вызовов:
 
-### 3.1. Этап buildStart (или configResolved)
+```ts
+return {
+  getUser: queryable(CurrentUserQuery, action(getUser)),
+  getMovies: queryable(MovieListQuery, action(getMovies)),  // ещё один query
+  increment: commandable(IncrementCommand, action(increment)),
+  reset: commandable(ResetCommand, action(reset)),  // ещё один command
+}
+```
+
+Все они должны быть собраны и добавлены в соответствующие registry.
+
+
+## 4. Алгоритм работы плагина
+
+### 4.1. Этап configResolved
+
+1. Читаем и парсим все `depIdsFiles`
+2. Строим общую карту `depIdsMap: Map<string, string>`
+   - ключ: `"INFRA_DEPS.CounterStore"`
+   - значение: `"CounterStore"`
+
+### 4.2. Этап buildStart
 
 1. Сканируем `storesDir` по паттерну `storePattern`
 2. Исключаем файлы по `exclude`
 3. Для каждого найденного файла:
    - парсим AST
-   - извлекаем Store ID, Queries, Commands
+   - извлекаем Store ID expression, Queries, Commands
+   - резолвим Store ID expression в реальное значение через `depIdsMap`
 
-### 3.2. Парсинг store файла
-
-Для каждого файла:
-
-1. **Собираем импорты** — строим карту `LocalName → ImportInfo`:
-   ```ts
-   interface ImportInfo {
-     originalName: string   // оригинальное имя (для aliased imports)
-     importPath: string     // путь импорта
-   }
-   
-   // import { CurrentUserQuery } from '@/domain/queries/user.query'
-   importMap['CurrentUserQuery'] = { 
-     originalName: 'CurrentUserQuery', 
-     importPath: '@/domain/queries/user.query' 
-   }
-   
-   // import { INFRA_DEPS } from '@/infrastructure/depIds'
-   importMap['INFRA_DEPS'] = {
-     originalName: 'INFRA_DEPS',
-     importPath: '@/infrastructure/depIds'
-   }
-   ```
-
-2. **Ищем `defineStore(STORE_ID, ...)`**:
-   - `CallExpression` с `callee.name === 'defineStore'`
-   - Первый аргумент:
-     - `MemberExpression`: `INFRA_DEPS.CounterStore` → `INFRA_DEPS.CounterStore`
-     - `Literal`: `'counter'` → `'counter'`
-
-3. **Ищем вызовы `queryable(X, ...)` и `commandable(X, ...)`**:
-   - `CallExpression` с `callee.name === 'queryable'` или `'commandable'`
-   - Первый аргумент — `Identifier` с именем Query/Command класса
-   - По `importMap` получаем путь импорта
-
-### 3.3. Результат парсинга
+### 4.3. Парсинг depIds файла
 
 ```ts
-interface StoreInfo {
-  storeId: string              // 'CounterStore' или "counter"'
+interface DepIdEntry {
+  constName: string      // 'INFRA_DEPS'
+  propertyName: string   // 'CounterStore'
+  value: string          // 'CounterStore'
+}
+
+function parseDepIdsFile(code: string): DepIdEntry[] {
+  const ast = parse(code)
+  const entries: DepIdEntry[] = []
+  
+  walk(ast, {
+    enter(node) {
+      // Ищем: export const CONST_NAME = { ... }
+      if (node.type === 'VariableDeclaration') {
+        for (const decl of node.declarations) {
+          if (decl.id.type === 'Identifier' && decl.init?.type === 'ObjectExpression') {
+            const constName = decl.id.name
+            
+            for (const prop of decl.init.properties) {
+              // Пропускаем SpreadElement (...APP_DEPS)
+              if (prop.type === 'SpreadElement') continue
+              
+              if (prop.type === 'Property' && 
+                  prop.key.type === 'Identifier' &&
+                  prop.value.type === 'Literal' &&
+                  typeof prop.value.value === 'string') {
+                entries.push({
+                  constName,
+                  propertyName: prop.key.name,
+                  value: prop.value.value
+                })
+              }
+            }
+          }
+        }
+      }
+    }
+  })
+  
+  return entries
+}
+```
+
+### 4.4. Парсинг store файла
+
+```ts
+interface StoreParseResult {
+  storeIdExpr: string           // 'INFRA_DEPS.CounterStore' или "'counter'"
   queries: CqrsEntry[]
   commands: CqrsEntry[]
 }
 
 interface CqrsEntry {
-  className: string            // 'CurrentUserQuery'
-  importPath: string           // '@/domain/queries/user.query'
+  className: string             // 'CurrentUserQuery'
+  importPath: string            // '@/domain/queries/user.query'
+}
+
+function parseStoreFile(code: string): StoreParseResult {
+  const ast = parse(code)
+  
+  // 1. Собираем импорты
+  const importMap: Map<string, { originalName: string; importPath: string }> = new Map()
+  
+  // 2. Ищем defineStore
+  let storeIdExpr: string | null = null
+  
+  // 3. Ищем queryable/commandable
+  const queries: CqrsEntry[] = []
+  const commands: CqrsEntry[] = []
+  
+  walk(ast, {
+    enter(node) {
+      // Импорты
+      if (node.type === 'ImportDeclaration') {
+        const importPath = node.source.value
+        for (const spec of node.specifiers) {
+          if (spec.type === 'ImportSpecifier') {
+            const localName = spec.local.name
+            const originalName = spec.imported.name
+            importMap.set(localName, { originalName, importPath })
+          }
+        }
+      }
+      
+      // defineStore
+      if (node.type === 'CallExpression' && 
+          node.callee.type === 'Identifier' && 
+          node.callee.name === 'defineStore') {
+        const firstArg = node.arguments[0]
+        if (firstArg.type === 'MemberExpression') {
+          // INFRA_DEPS.CounterStore
+          const obj = firstArg.object.name    // 'INFRA_DEPS'
+          const prop = firstArg.property.name // 'CounterStore'
+          storeIdExpr = `${obj}.${prop}`
+        } else if (firstArg.type === 'Literal') {
+          // 'counter'
+          storeIdExpr = `'${firstArg.value}'`
+        }
+      }
+      
+      // queryable / commandable
+      if (node.type === 'CallExpression' && 
+          node.callee.type === 'Identifier') {
+        const fnName = node.callee.name
+        if (fnName === 'queryable' || fnName === 'commandable') {
+          const firstArg = node.arguments[0]
+          if (firstArg.type === 'Identifier') {
+            const className = firstArg.name
+            const importInfo = importMap.get(className)
+            if (importInfo) {
+              const entry: CqrsEntry = {
+                className: importInfo.originalName,
+                importPath: importInfo.importPath
+              }
+              if (fnName === 'queryable') {
+                queries.push(entry)
+              } else {
+                commands.push(entry)
+              }
+            }
+          }
+        }
+      }
+    }
+  })
+  
+  return { storeIdExpr, queries, commands }
+}
+```
+
+### 4.5. Резолв Store ID
+
+После парсинга store файла получаем `storeIdExpr` (например, `"INFRA_DEPS.CounterStore"`).
+
+Резолвим его в реальное значение:
+
+```ts
+function resolveStoreId(storeIdExpr: string, depIdsMap: Map<string, string>): string {
+  // Если это строковый литерал: "'counter'" → 'counter'
+  if (storeIdExpr.startsWith("'") && storeIdExpr.endsWith("'")) {
+    return storeIdExpr.slice(1, -1)
+  }
+  
+  // Если это MemberExpression: "INFRA_DEPS.CounterStore"
+  const resolved = depIdsMap.get(storeIdExpr)
+  if (resolved) {
+    return resolved
+  }
+  
+  throw new Error(`Cannot resolve Store ID: ${storeIdExpr}. ` +
+    `Make sure it's defined in one of depIdsFiles.`)
+}
+```
+
+### 4.6. Результат сканирования
+
+```ts
+interface StoreInfo {
+  filePath: string              // 'src/infrastructure/stores/counter/counter.ts'
+  storeId: string               // 'CounterStore' (resolved)
+  queries: CqrsEntry[]
+  commands: CqrsEntry[]
 }
 
 const stores: StoreInfo[] = []
 ```
 
 
-## 4. Генерация виртуальных модулей
+## 5. Генерация виртуальных модулей
 
-### 4.1. IDs
+### 5.1. IDs
 
 ```ts
 const QUERIES_VIRTUAL_ID = options.queriesVirtualModuleId ?? 'virtual:queries-registry'
@@ -210,7 +424,7 @@ const RESOLVED_QUERIES_ID = '\0' + QUERIES_VIRTUAL_ID
 const RESOLVED_COMMANDS_ID = '\0' + COMMANDS_VIRTUAL_ID
 ```
 
-### 4.2. Hooks
+### 5.2. Hooks
 
 - `resolveId(id)`:
   - если `id === QUERIES_VIRTUAL_ID` → return `RESOLVED_QUERIES_ID`
@@ -220,58 +434,74 @@ const RESOLVED_COMMANDS_ID = '\0' + COMMANDS_VIRTUAL_ID
   - если `id === RESOLVED_QUERIES_ID` → генерируем модуль queries
   - если `id === RESOLVED_COMMANDS_ID` → генерируем модуль commands
 
-### 4.3. Генерация кода для queries
+### 5.3. Генерация кода для queries
 
 ```ts
 function generateQueriesModule(stores: StoreInfo[]): string {
-  const imports = new Set<string>()
+  const imports: string[] = []
   const entries: string[] = []
+  const seen = new Set<string>()  // Избегаем дубликатов импортов
   
   for (const store of stores) {
     for (const query of store.queries) {
-      imports.add(`import { ${query.className} } from '${query.importPath}'`)
-      entries.push(`[${query.className}, ${store.storeId}]`)
+      const importKey = `${query.className}:${query.importPath}`
+      if (!seen.has(importKey)) {
+        seen.add(importKey)
+        imports.push(`import { ${query.className} } from '${query.importPath}'`)
+      }
+      entries.push(`  [${query.className}, '${store.storeId}']`)
     }
   }
   
-  return `
-${[...imports].join('\n')}
+  if (imports.length === 0) {
+    return `export const queriesRegistry = new Map<Function, string>()\n`
+  }
+  
+  return `${imports.join('\n')}
 
 export const queriesRegistry = new Map<Function, string>([
-  ${entries.join(',\n  ')}
+${entries.join(',\n')}
 ])
 `
 }
 ```
 
-### 4.4. Генерация кода для commands
+### 5.4. Генерация кода для commands
 
 ```ts
 function generateCommandsModule(stores: StoreInfo[]): string {
-  const imports = new Set<string>()
+  const imports: string[] = []
   const entries: string[] = []
+  const seen = new Set<string>()
   
   for (const store of stores) {
     for (const command of store.commands) {
-      imports.add(`import { ${command.className} } from '${command.importPath}'`)
-      entries.push(`[${command.className}, ${store.storeId}]`)
+      const importKey = `${command.className}:${command.importPath}`
+      if (!seen.has(importKey)) {
+        seen.add(importKey)
+        imports.push(`import { ${command.className} } from '${command.importPath}'`)
+      }
+      entries.push(`  [${command.className}, '${store.storeId}']`)
     }
   }
   
-  return `
-${[...imports].join('\n')}
+  if (imports.length === 0) {
+    return `export const commandsRegistry = new Map<Function, string>()\n`
+  }
+  
+  return `${imports.join('\n')}
 
 export const commandsRegistry = new Map<Function, string>([
-  ${entries.join(',\n  ')}
+${entries.join(',\n')}
 ])
 `
 }
 ```
 
 
-## 5. Использование в QueryInvoker / CommandInvoker
+## 6. Использование в QueryInvoker / CommandInvoker
 
-### 5.1. Изменение QueryInvoker
+### 6.1. Изменение QueryInvoker
 
 ```ts
 // src/domain/queries/queryInvoker.ts
@@ -297,7 +527,7 @@ export class QueryInvoker<TResult> implements IQueryInvoker<TResult> {
 }
 ```
 
-### 5.2. Изменение CommandInvoker
+### 6.2. Изменение CommandInvoker
 
 ```ts
 // src/domain/commands/commandInvoker.ts
@@ -324,9 +554,9 @@ export class CommandInvoker<TResult> implements ICommandInvoker<TResult> {
 ```
 
 
-## 6. Hot Module Replacement (HMR)
+## 7. Hot Module Replacement (HMR)
 
-### 6.1. Отслеживание изменений
+### 7.1. Отслеживание изменений
 
 В dev режиме плагин должен:
 
@@ -336,48 +566,83 @@ export class CommandInvoker<TResult> implements ICommandInvoker<TResult> {
    - обновить registry
    - инвалидировать виртуальный модуль
 
-### 6.2. Реализация
+3. Следить за изменениями в `depIdsFiles`
+4. При изменении depIds файла:
+   - перепарсить все depIds файлы
+   - пересканировать все stores (т.к. могли измениться resolved values)
+   - инвалидировать оба виртуальных модуля
+
+### 7.2. Реализация
 
 ```ts
 configureServer(server) {
+  // Следим за store файлами
   server.watcher.on('change', (file) => {
     if (isStoreFile(file)) {
-      updateRegistry(file)
-      
-      // Инвалидируем оба виртуальных модуля
-      const queriesMod = server.moduleGraph.getModuleById(RESOLVED_QUERIES_ID)
-      const commandsMod = server.moduleGraph.getModuleById(RESOLVED_COMMANDS_ID)
-      
-      if (queriesMod) {
-        server.moduleGraph.invalidateModule(queriesMod)
-      }
-      if (commandsMod) {
-        server.moduleGraph.invalidateModule(commandsMod)
-      }
+      updateStoreRegistry(file)
+      invalidateVirtualModules(server)
+    }
+    
+    if (isDepIdsFile(file)) {
+      rebuildDepIdsMap()
+      rescanAllStores()
+      invalidateVirtualModules(server)
     }
   })
+  
+  server.watcher.on('add', (file) => {
+    if (isStoreFile(file)) {
+      addStoreToRegistry(file)
+      invalidateVirtualModules(server)
+    }
+  })
+  
+  server.watcher.on('unlink', (file) => {
+    if (isStoreFile(file)) {
+      removeStoreFromRegistry(file)
+      invalidateVirtualModules(server)
+    }
+  })
+}
+
+function invalidateVirtualModules(server: ViteDevServer) {
+  const queriesMod = server.moduleGraph.getModuleById(RESOLVED_QUERIES_ID)
+  const commandsMod = server.moduleGraph.getModuleById(RESOLVED_COMMANDS_ID)
+  
+  if (queriesMod) {
+    server.moduleGraph.invalidateModule(queriesMod)
+  }
+  if (commandsMod) {
+    server.moduleGraph.invalidateModule(commandsMod)
+  }
 }
 ```
 
 
-## 7. Обработка ошибок
+## 8. Обработка ошибок
 
-### 7.1. Store ID не найден
+### 8.1. Store ID не найден в defineStore
 
 Если `defineStore(...)` не найден в файле:
-- **error** в консоль
-- останавливаем сборку
+- **warning** в консоль (файл может быть utility, не store)
+- пропускаем файл
 
-### 7.2. Query/Command не импортирован
+### 8.2. Store ID не резолвится
+
+Если `INFRA_DEPS.SomeStore` не найден в `depIdsMap`:
+- **error** в консоль
+- останавливаем сборку с понятным сообщением
+
+### 8.3. Query/Command не импортирован
 
 Если `queryable(SomeQuery, ...)` но `SomeQuery` не найден в импортах:
 - **error** в консоль
 - останавливаем сборку
 
 
-## 8. Использование плагина
+## 9. Использование плагина
 
-### 8.1. Конфигурация Vite
+### 9.1. Конфигурация Vite
 
 ```ts
 // vite.config.ts
@@ -387,19 +652,14 @@ export default defineConfig({
   plugins: [
     cqrsRegisterPlugin({
       storesDir: 'src/infrastructure/stores',
-      depIdsFiles: [
-        'src/domain/depIds.ts',
-        'src/application/depIds.ts', 
-        'src/infrastructure/depIds.ts',
-        'src/ui/depIds.ts'
-      ],
+      depIdsFiles: ['src/infrastructure/depIds.ts'],  // файл с Store ID
       devTelemetry: true
     })
   ]
 })
 ```
 
-### 8.2. TypeScript декларации
+### 9.2. TypeScript декларации
 
 ```ts
 // src/vite-env.d.ts
@@ -413,7 +673,7 @@ declare module 'virtual:commands-registry' {
 ```
 
 
-## 9. Поведение в разных режимах
+## 10. Поведение в разных режимах
 
 | Режим | Поведение |
 |-------|-----------|
@@ -422,60 +682,77 @@ declare module 'virtual:commands-registry' {
 | `vite preview` | Использует сгенерированный код из build |
 
 
-## 10. Логирование и отладка
+## 11. Логирование и отладка
 
 Если `devTelemetry: true`:
 
 ```
+[vite-cqrs-register] Parsing depIds files...
+[vite-cqrs-register]   src/infrastructure/depIds.ts: 3 entries
+[vite-cqrs-register] Total depIds entries: 3
+
 [vite-cqrs-register] Scanning stores in: src/infrastructure/stores
 [vite-cqrs-register] Found 3 store files
 
-[vite-cqrs-register] counter/counter.ts (INFRA_DEPS.CounterStore):
+[vite-cqrs-register] counter/counter.ts:
+  Store ID: INFRA_DEPS.CounterStore → 'CounterStore'
   Queries:
-    - CurrentUserQuery
+    - CurrentUserQuery (@/domain/queries/user.query)
   Commands:
-    - IncrementCommand
+    - IncrementCommand (@/domain/commands/increment.command)
 
-[vite-cqrs-register] movies/movies.ts (INFRA_DEPS.MoviesStore):
+[vite-cqrs-register] movies/movies.ts:
+  Store ID: INFRA_DEPS.MoviesStore → 'MoviesStore'
   Queries:
-    - MovieListQuery
+    - MovieListQuery (@/domain/queries/movie.query)
 
-[vite-cqrs-register] date/date.ts (INFRA_DEPS.DateStore):
+[vite-cqrs-register] date/date.ts:
+  Store ID: INFRA_DEPS.DateStore → 'DateStore'
   Commands:
-    - DateUpdateCommand
+    - DateUpdateCommand (@/domain/commands/date.command)
 
 [vite-cqrs-register] Total: 2 queries, 2 commands
 ```
 
 
-## 11. Acceptance criteria / тесты
+## 12. Acceptance criteria / тесты
 
-### 11.1. Unit-тесты (vitest)
+### 12.1. Unit-тесты (vitest)
 
-1. **Парсинг импортов**
+1. **Парсинг depIds файлов**
+   - `INFRA_DEPS = { CounterStore: 'CounterStore' }` → `depIdsMap['INFRA_DEPS.CounterStore'] = 'CounterStore'`
+   - Spread operator `...APP_DEPS` игнорируется
+   - Несколько констант в одном файле обрабатываются
+
+2. **Парсинг импортов в store**
    - `import { X } from 'path'` → `importMap['X'] = { originalName: 'X', importPath: 'path' }`
    - `import { X as Y } from 'path'` → `importMap['Y'] = { originalName: 'X', importPath: 'path' }`
 
-2. **Парсинг Store ID**
-   - `defineStore(INFRA_DEPS.CounterStore, ...)` → `INFRA_DEPS.CounterStore`
-   - `defineStore('counter', ...)` → `'counter'`
+3. **Парсинг Store ID**
+   - `defineStore(INFRA_DEPS.CounterStore, ...)` → storeIdExpr = `'INFRA_DEPS.CounterStore'`
+   - `defineStore('counter', ...)` → storeIdExpr = `"'counter'"`
 
-3. **Парсинг queryable/commandable**
+4. **Резолв Store ID**
+   - `'INFRA_DEPS.CounterStore'` + depIdsMap → `'CounterStore'`
+   - `"'counter'"` → `'counter'`
+
+5. **Парсинг queryable/commandable**
    - `queryable(CurrentUserQuery, action(fn))` → добавляется в queries
    - `commandable(IncrementCommand, action(fn))` → добавляется в commands
-   - вложенные вызовы внутри return statement — находятся
+   - Несколько вызовов в одном store — все находятся
 
-4. **Генерация виртуальных модулей**
+6. **Генерация виртуальных модулей**
    - `virtual:queries-registry` экспортирует только `queriesRegistry`
    - `virtual:commands-registry` экспортирует только `commandsRegistry`
-   - каждый модуль содержит только нужные импорты
-   - синтаксически валидный TypeScript
+   - Каждый модуль содержит только нужные импорты
+   - Store ID в Map — строка (не MemberExpression)
+   - Синтаксически валидный TypeScript
 
-5. **Раздельность модулей**
+7. **Раздельность модулей**
    - Query попадает только в `virtual:queries-registry`
    - Command попадает только в `virtual:commands-registry`
 
-### 11.2. Интеграционный тест
+### 12.2. Интеграционный тест
 
 1. Создать тестовый проект с 3 stores
 2. Запустить vite build
@@ -485,37 +762,44 @@ declare module 'virtual:commands-registry' {
 6. Проверить что `commandsRegistry.get(IncrementCommand) === 'CounterStore'`
 
 
-## 12. Структура файлов
+## 13. Структура файлов
 
 ```
 lib/
   vite-cqrs-register-plugin/
     index.ts                  # главный файл плагина
+    parseDepIds.ts            # парсинг depIds файлов
     parseStore.ts             # парсинг store файла
     generateModule.ts         # генерация виртуального модуля
     types.ts                  # типы
     vite-cqrs-register-plugin-spec.md
+    TASK.md
     __tests__/
+      parseDepIds.spec.ts
       parseStore.spec.ts
       generateModule.spec.ts
       plugin.spec.ts
 ```
 
 
-## 13. Риски и допущения
+## 14. Риски и допущения
 
 1. **Формат store файла** — предполагаем стандартную структуру с `defineStore` и `queryable`/`commandable` в return statement.
 
-2. **DEPS convention** — Store ID определяется через `depIdsFiles`. Если id встречается в нескольких файлах — берем из **последнего** файла массива.
+2. **Формат depIds файла** — предполагаем `export const CONST_NAME = { key: 'value' } as const`.
 
-3. **Именованные импорты** — Query/Command классы импортируются через named imports (не default).
+3. **Строковые значения Store ID** — в depIds файлах значения Store ID должны быть строками (`'MoviesStore'`), не Symbol.
 
-4. **Один store = один файл** — не поддерживаем несколько stores в одном файле.
+4. **DEPS convention** — Store ID определяется через `depIdsFiles`. Если id встречается в нескольких файлах — берём из **последнего** файла массива.
 
-5. **IoC integration** — stores загружаются через `getServiceAsync(storeId, container)`.
+5. **Именованные импорты** — Query/Command классы импортируются через named imports (не default).
+
+6. **Один store = один файл** — не поддерживаем несколько stores в одном файле.
+
+7. **IoC integration** — stores загружаются через `getServiceAsync(storeId, container)`.
 
 
-## 14. Миграция
+## 15. Миграция
 
 После внедрения плагина:
 
@@ -524,4 +808,3 @@ lib/
 3. Обновить `QueryInvoker` и `CommandInvoker` для использования registries
 4. Удалить `CommandsQueries` из `src/domain/commandsQueries.ts` (заменяется на два registry)
 5. Добавить type declaration в `vite-env.d.ts`
-

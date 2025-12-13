@@ -1,6 +1,5 @@
 import '@/assets/main.css'
 import 'reflect-metadata'
-import '@/infrastructure/stores/register'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'

@@ -1,4 +1,4 @@
-import { ref, computed, type ComputedRef, type Ref } from 'vue'
+import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { queryable } from '@/infrastructure/queries/queryable'
 import { CurrentUserQuery } from '@/domain/queries/user.query'

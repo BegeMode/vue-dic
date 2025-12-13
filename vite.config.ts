@@ -5,6 +5,7 @@ import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 import viteInjectVueDepsPlugin from './lib/vite-inject-vue-deps-plugin/vite-inject-vue-deps-plugin'
 import viteChunksMapPlugin from './lib/vite-chunks-map-plugin'
+import cqrsRegisterPlugin from './lib/vite-cqrs-register-plugin'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -16,6 +17,11 @@ export default defineConfig({
     devSourcemap: true
   },
   plugins: [
+    cqrsRegisterPlugin({
+      storesDir: 'src/infrastructure/stores',
+      depIdsFiles: ['src/infrastructure/depIds.ts'],
+      devTelemetry: true
+    }),
     viteInjectVueDepsPlugin({
       loadFnImport: {
         from: '@/infrastructure/ioc/ioc',
