@@ -9,7 +9,7 @@
 1. Сканирует `src/infrastructure/stores/**/**.ts`
 2. Парсит AST каждого store-файла
 3. Находит:
-   - `defineStore(INFRA_DEPS.StoreName.description!, ...)` → извлекает Store ID
+   - `defineStore(storeID, ...)` → извлекает Store ID
    - `queryable(QueryClass, ...)` → добавляет в queries registry
    - `commandable(CommandClass, ...)` → добавляет в commands registry
 4. Генерирует два виртуальных модуля
@@ -18,23 +18,21 @@
 
 ```ts
 // virtual:queries-registry
-import { INFRA_DEPS } from '@/infrastructure/depIds'
 import { CurrentUserQuery } from '@/domain/queries/user.query'
 import { MovieListQuery } from '@/domain/queries/movie.query'
 
-export const queriesRegistry = new Map<Function, symbol>([
-  [CurrentUserQuery, INFRA_DEPS.CounterStore],
-  [MovieListQuery, INFRA_DEPS.MoviesStore],
+export const queriesRegistry = new Map<Function, string>([
+  [CurrentUserQuery, 'CounterStore'],
+  [MovieListQuery, 'MoviesStore'],
 ])
 ```
 
 ```ts
 // virtual:commands-registry
-import { INFRA_DEPS } from '@/infrastructure/depIds'
 import { IncrementCommand } from '@/domain/commands/increment.command'
 
-export const commandsRegistry = new Map<Function, symbol>([
-  [IncrementCommand, INFRA_DEPS.CounterStore],
+export const commandsRegistry = new Map<Function, string>([
+  [IncrementCommand, 'CounterStore'],
 ])
 ```
 
@@ -49,7 +47,7 @@ import { CurrentUserQuery } from '@/domain/queries/user.query'
 import { IncrementCommand } from '@/domain/commands/increment.command'
 import { INFRA_DEPS } from '@/infrastructure/depIds'
 
-const useCounterStore = defineStore(INFRA_DEPS.CounterStore.description!, ({ action }) => {
+const useCounterStore = defineStore(INFRA_DEPS.CounterStore, ({ action }) => {
   // ...
   return {
     increment: commandable(IncrementCommand, action(increment)),
@@ -80,7 +78,7 @@ lib/vite-cqrs-register-plugin/
 ```ts
 interface CqrsRegisterPluginOptions {
   storesDir?: string           // default: 'src/infrastructure/stores'
-  infraDepsPath?: string       // default: '@/infrastructure/depIds'
+  depIdsFiles: string[]      // default: ['@/infrastructure/depIds']
   queriesVirtualModuleId?: string   // default: 'virtual:queries-registry'
   commandsVirtualModuleId?: string  // default: 'virtual:commands-registry'
   devTelemetry?: boolean       // default: false

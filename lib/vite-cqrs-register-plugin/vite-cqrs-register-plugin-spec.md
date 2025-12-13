@@ -8,17 +8,17 @@
 1. Во время сборки (dev и prod) анализирует store-файлы и строит **два словаря**:
 
 ```ts
-// Query класс → Store ID (symbol)
-type QueriesMap = Map<QueryClass, symbol>
+// Query класс → Store ID (string)
+type QueriesMap = Map<QueryClass, string>
 
-// Command класс → Store ID (symbol)  
-type CommandsMap = Map<CommandClass, symbol>
+// Command класс → Store ID (string)  
+type CommandsMap = Map<CommandClass, string>
 ```
 
 2. Автоматически находит связи:
    - вызовы `queryable(QueryClass, action(...))` внутри store → добавляет в QueriesMap
    - вызовы `commandable(CommandClass, action(...))` внутри store → добавляет в CommandsMap
-   - Store ID из `defineStore(INFRA_DEPS.StoreName.description!, ...)` или `defineStore(STORE_ID, ...)`
+   - Store ID из `defineStore(INFRA_DEPS.StoreName, ...)` или `defineStore(STORE_ID, ...)`
 
 3. Генерирует **два виртуальных модуля**:
    ```ts
@@ -34,33 +34,31 @@ type CommandsMap = Map<CommandClass, symbol>
 ### 0.1. Пример результата
 
 Для проекта со stores:
-- `counter/counter.ts`: `defineStore(INFRA_DEPS.CounterStore.description!, ...)` с `queryable(CurrentUserQuery, ...)` и `commandable(IncrementCommand, ...)`
-- `movies/movies.ts`: `defineStore(INFRA_DEPS.MoviesStore.description!, ...)` с `queryable(MovieListQuery, ...)`
-- `date/date.ts`: `defineStore(INFRA_DEPS.DateStore.description!, ...)` с `commandable(DateUpdateCommand, ...)`
+- `counter/counter.ts`: `defineStore(INFRA_DEPS.CounterStore, ...)` с `queryable(CurrentUserQuery, ...)` и `commandable(IncrementCommand, ...)`
+- `movies/movies.ts`: `defineStore(INFRA_DEPS.MoviesStore, ...)` с `queryable(MovieListQuery, ...)`
+- `date/date.ts`: `defineStore(INFRA_DEPS.DateStore, ...)` с `commandable(DateUpdateCommand, ...)`
 
 Генерируются два модуля:
 
 ```ts
 // virtual:queries-registry
-import { INFRA_DEPS } from '@/infrastructure/depIds'
 import { CurrentUserQuery } from '@/domain/queries/user.query'
 import { MovieListQuery } from '@/domain/queries/movie.query'
 
-export const queriesRegistry = new Map<Function, symbol>([
-  [CurrentUserQuery, INFRA_DEPS.CounterStore],
-  [MovieListQuery, INFRA_DEPS.MoviesStore],
+export const queriesRegistry = new Map<Function, string>([
+  [CurrentUserQuery, 'CounterStore'],
+  [MovieListQuery, 'MoviesStore'],
 ])
 ```
 
 ```ts
 // virtual:commands-registry
-import { INFRA_DEPS } from '@/infrastructure/depIds'
 import { IncrementCommand } from '@/domain/commands/increment.command'
 import { DateUpdateCommand } from '@/domain/commands/date.command'
 
-export const commandsRegistry = new Map<Function, symbol>([
-  [IncrementCommand, INFRA_DEPS.CounterStore],
-  [DateUpdateCommand, INFRA_DEPS.DateStore],
+export const commandsRegistry = new Map<Function, string>([
+  [IncrementCommand, 'CounterStore'],
+  [DateUpdateCommand, 'DateStore'],
 ])
 ```
 
@@ -78,8 +76,8 @@ export interface CqrsRegisterPluginOptions {
   /** Исключаемые файлы/папки (glob patterns) */
   exclude?: string[]  // default: ['**/__tests__/**', '**/loader.ts', '**/types.ts']
 
-  /** Путь к файлу с INFRA_DEPS */
-  infraDepsPath?: string  // default: '@/infrastructure/depIds'
+  /** Массив путей к TS-файлам с export const deps = ... */
+  depIdsFiles: string[]
 
   /** Имя виртуального модуля для queries */
   queriesVirtualModuleId?: string  // default: 'virtual:queries-registry'
@@ -115,7 +113,7 @@ import { CurrentUserQuery } from '@/domain/queries/user.query'
 import { IncrementCommand } from '@/domain/commands/increment.command'
 import { INFRA_DEPS } from '@/infrastructure/depIds'
 
-const useCounterStore = defineStore(INFRA_DEPS.CounterStore.description!, ({ action }) => {
+const useCounterStore = defineStore(INFRA_DEPS.CounterStore, ({ action }) => {
   // ...
   return {
     increment: commandable(IncrementCommand, action(increment)),
@@ -127,9 +125,9 @@ const useCounterStore = defineStore(INFRA_DEPS.CounterStore.description!, ({ act
 ### 2.2. Что извлекаем
 
 1. **Store ID** — первый аргумент `defineStore()`:
-   - `INFRA_DEPS.CounterStore.description!` → извлекаем `INFRA_DEPS.CounterStore`
+   - `INFRA_DEPS.CounterStore` → извлекаем `INFRA_DEPS.CounterStore`
    - `INFRA_DEPS.CounterStore` → используем как есть
-   - `'counter'` (строковый литерал) → генерируем `Symbol.for('counter')`
+   - `'counter'` (строковый литерал) → используем как есть`
 
 2. **Query классы** — первый аргумент `queryable()`
 
@@ -175,9 +173,8 @@ const useCounterStore = defineStore(INFRA_DEPS.CounterStore.description!, ({ act
 2. **Ищем `defineStore(STORE_ID, ...)`**:
    - `CallExpression` с `callee.name === 'defineStore'`
    - Первый аргумент:
-     - `MemberExpression`: `INFRA_DEPS.CounterStore.description` → `INFRA_DEPS.CounterStore`
      - `MemberExpression`: `INFRA_DEPS.CounterStore` → `INFRA_DEPS.CounterStore`
-     - `Literal`: `'counter'` → `Symbol.for('counter')`
+     - `Literal`: `'counter'` → `'counter'`
 
 3. **Ищем вызовы `queryable(X, ...)` и `commandable(X, ...)`**:
    - `CallExpression` с `callee.name === 'queryable'` или `'commandable'`
@@ -188,8 +185,7 @@ const useCounterStore = defineStore(INFRA_DEPS.CounterStore.description!, ({ act
 
 ```ts
 interface StoreInfo {
-  storeId: string              // 'INFRA_DEPS.CounterStore' или 'Symbol.for("counter")'
-  storeIdImport?: ImportInfo   // если используется INFRA_DEPS
+  storeId: string              // 'CounterStore' или "counter"'
   queries: CqrsEntry[]
   commands: CqrsEntry[]
 }
@@ -231,8 +227,6 @@ function generateQueriesModule(stores: StoreInfo[]): string {
   const imports = new Set<string>()
   const entries: string[] = []
   
-  imports.add(`import { INFRA_DEPS } from '${options.infraDepsPath}'`)
-  
   for (const store of stores) {
     for (const query of store.queries) {
       imports.add(`import { ${query.className} } from '${query.importPath}'`)
@@ -243,7 +237,7 @@ function generateQueriesModule(stores: StoreInfo[]): string {
   return `
 ${[...imports].join('\n')}
 
-export const queriesRegistry = new Map<Function, symbol>([
+export const queriesRegistry = new Map<Function, string>([
   ${entries.join(',\n  ')}
 ])
 `
@@ -257,8 +251,6 @@ function generateCommandsModule(stores: StoreInfo[]): string {
   const imports = new Set<string>()
   const entries: string[] = []
   
-  imports.add(`import { INFRA_DEPS } from '${options.infraDepsPath}'`)
-  
   for (const store of stores) {
     for (const command of store.commands) {
       imports.add(`import { ${command.className} } from '${command.importPath}'`)
@@ -269,7 +261,7 @@ function generateCommandsModule(stores: StoreInfo[]): string {
   return `
 ${[...imports].join('\n')}
 
-export const commandsRegistry = new Map<Function, symbol>([
+export const commandsRegistry = new Map<Function, string>([
   ${entries.join(',\n  ')}
 ])
 `
@@ -373,14 +365,14 @@ configureServer(server) {
 ### 7.1. Store ID не найден
 
 Если `defineStore(...)` не найден в файле:
-- **warning** в консоль
-- пропускаем этот файл
+- **error** в консоль
+- останавливаем сборку
 
 ### 7.2. Query/Command не импортирован
 
 Если `queryable(SomeQuery, ...)` но `SomeQuery` не найден в импортах:
-- **warning** в консоль
-- пропускаем эту запись
+- **error** в консоль
+- останавливаем сборку
 
 
 ## 8. Использование плагина
@@ -395,6 +387,12 @@ export default defineConfig({
   plugins: [
     cqrsRegisterPlugin({
       storesDir: 'src/infrastructure/stores',
+      depIdsFiles: [
+        'src/domain/depIds.ts',
+        'src/application/depIds.ts', 
+        'src/infrastructure/depIds.ts',
+        'src/ui/depIds.ts'
+      ],
       devTelemetry: true
     })
   ]
@@ -406,11 +404,11 @@ export default defineConfig({
 ```ts
 // src/vite-env.d.ts
 declare module 'virtual:queries-registry' {
-  export const queriesRegistry: Map<Function, symbol>
+  export const queriesRegistry: Map<Function, string>
 }
 
 declare module 'virtual:commands-registry' {
-  export const commandsRegistry: Map<Function, symbol>
+  export const commandsRegistry: Map<Function, string>
 }
 ```
 
@@ -459,9 +457,8 @@ declare module 'virtual:commands-registry' {
    - `import { X as Y } from 'path'` → `importMap['Y'] = { originalName: 'X', importPath: 'path' }`
 
 2. **Парсинг Store ID**
-   - `defineStore(INFRA_DEPS.CounterStore.description!, ...)` → `INFRA_DEPS.CounterStore`
    - `defineStore(INFRA_DEPS.CounterStore, ...)` → `INFRA_DEPS.CounterStore`
-   - `defineStore('counter', ...)` → `Symbol.for('counter')`
+   - `defineStore('counter', ...)` → `'counter'`
 
 3. **Парсинг queryable/commandable**
    - `queryable(CurrentUserQuery, action(fn))` → добавляется в queries
@@ -472,7 +469,6 @@ declare module 'virtual:commands-registry' {
    - `virtual:queries-registry` экспортирует только `queriesRegistry`
    - `virtual:commands-registry` экспортирует только `commandsRegistry`
    - каждый модуль содержит только нужные импорты
-   - содержит импорт `INFRA_DEPS`
    - синтаксически валидный TypeScript
 
 5. **Раздельность модулей**
@@ -485,8 +481,8 @@ declare module 'virtual:commands-registry' {
 2. Запустить vite build
 3. Проверить что `virtual:queries-registry` экспортирует `queriesRegistry`
 4. Проверить что `virtual:commands-registry` экспортирует `commandsRegistry`
-5. Проверить что `queriesRegistry.get(MovieListQuery) === INFRA_DEPS.MoviesStore`
-6. Проверить что `commandsRegistry.get(IncrementCommand) === INFRA_DEPS.CounterStore`
+5. Проверить что `queriesRegistry.get(MovieListQuery) === 'MoviesStore'`
+6. Проверить что `commandsRegistry.get(IncrementCommand) === 'CounterStore'`
 
 
 ## 12. Структура файлов
@@ -510,7 +506,7 @@ lib/
 
 1. **Формат store файла** — предполагаем стандартную структуру с `defineStore` и `queryable`/`commandable` в return statement.
 
-2. **INFRA_DEPS convention** — Store ID определяется через `INFRA_DEPS.StoreName` или `INFRA_DEPS.StoreName.description!`.
+2. **DEPS convention** — Store ID определяется через `depIdsFiles`. Если id встречается в нескольких файлах — берем из **последнего** файла массива.
 
 3. **Именованные импорты** — Query/Command классы импортируются через named imports (не default).
 
