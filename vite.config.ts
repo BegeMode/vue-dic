@@ -20,7 +20,7 @@ export default defineConfig({
     cqrsRegisterPlugin({
       storesDir: 'src/infrastructure/stores',
       depIdsFiles: ['src/infrastructure/depIds.ts'],
-      devTelemetry: true
+      devTelemetry: false
     }),
     viteInjectVueDepsPlugin({
       loadFnImport: {

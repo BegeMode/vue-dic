@@ -17,10 +17,18 @@ import { CommandBase } from '@/domain/commands/commandBase'
 import { QueryInvoker } from '@/domain/queries/queryInvoker'
 import { CommandInvoker } from '@/domain/commands/commandInvoker'
 import { InteractiveQueryInvoker } from '@/ui/interactiveQueryInvoker'
+import { registerApp, setActiveContainer } from '@/ui/appContext'
 
 const ioc = new Container()
 ioc.bind<Container>(DEPS.Container).toConstantValue(ioc)
 ioc.bind(DEPS_REGISTER).toConstantValue(deps)
+
+// Register invokers in the IoC container for multi-app support
+ioc.bind<QueryInvoker<unknown>>(QUERY_INVOKER).toConstantValue(new QueryInvoker(ioc))
+ioc.bind<CommandInvoker<unknown>>(COMMAND_INVOKER).toConstantValue(new CommandInvoker(ioc))
+ioc.bind<InteractiveQueryInvoker<unknown>>(INTERACTIVE_QUERY_INVOKER).toConstantValue(
+  new InteractiveQueryInvoker(ioc)
+)
 
 const app = createApp(App)
 
@@ -30,14 +38,18 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 
+// Set as active container before mounting (for queries created during setup)
+setActiveContainer(ioc)
+
 registerStaticDeps(ioc).then(() => {
-  Reflect.defineMetadata(QUERY_INVOKER, new QueryInvoker(ioc), QueryBase)
-  Reflect.defineMetadata(COMMAND_INVOKER, new CommandInvoker(ioc), CommandBase)
-  Reflect.defineMetadata(
-    INTERACTIVE_QUERY_INVOKER,
-    new InteractiveQueryInvoker(ioc),
-    QueryBase
-  )
+  // Keep global metadata as fallback for backwards compatibility
+  Reflect.defineMetadata(QUERY_INVOKER, ioc.get(QUERY_INVOKER), QueryBase)
+  Reflect.defineMetadata(COMMAND_INVOKER, ioc.get(COMMAND_INVOKER), CommandBase)
+  Reflect.defineMetadata(INTERACTIVE_QUERY_INVOKER, ioc.get(INTERACTIVE_QUERY_INVOKER), QueryBase)
 })
 
-app.mount('#app')
+const rootEl = document.querySelector('#app') as HTMLElement
+app.mount(rootEl)
+
+// Register app for automatic context switching on user interaction
+registerApp(app, ioc, rootEl)

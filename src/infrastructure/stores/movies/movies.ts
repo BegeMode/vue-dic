@@ -16,7 +16,7 @@ const useMoviesStore = defineStore(INFRA_DEPS.MoviesStore, ({ action }) => {
         apikey: API_KEY,
         y: query.year,
         s: 'all', // Search all films (required not empty request)
-        type: 'movie'
+        type: 'movie',
       }
     })
 
