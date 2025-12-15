@@ -10,9 +10,13 @@ import { Container } from 'inversify'
 import { deps } from '@/ui/deps'
 import { DEPS_REGISTER } from '@/infrastructure/ioc/types'
 import { registerStaticDeps } from '@/infrastructure/ioc/ioc'
-import { INTERACTIVE_QUERY_INVOKER, QUERY_INVOKER } from '@/domain/global'
+import { COMMAND_INVOKER, INTERACTIVE_QUERY_INVOKER, QUERY_INVOKER } from '@/domain/global'
 import { QueryBase } from '@/domain/queries/queryBase'
 import { DEPS } from '@/ui/depIds'
+import { CommandBase } from '@/domain/commands/commandBase'
+import { QueryInvoker } from '@/domain/queries/queryInvoker'
+import { CommandInvoker } from '@/domain/commands/commandInvoker'
+import { InteractiveQueryInvoker } from '@/ui/interactiveQueryInvoker'
 
 const ioc = new Container()
 ioc.bind<Container>(DEPS.Container).toConstantValue(ioc)
@@ -27,10 +31,11 @@ app.use(pinia)
 app.use(router)
 
 registerStaticDeps(ioc).then(() => {
-  Reflect.defineMetadata(QUERY_INVOKER, ioc.get(DEPS.QueryInvoker), QueryBase)
+  Reflect.defineMetadata(QUERY_INVOKER, new QueryInvoker(ioc), QueryBase)
+  Reflect.defineMetadata(COMMAND_INVOKER, new CommandInvoker(ioc), CommandBase)
   Reflect.defineMetadata(
     INTERACTIVE_QUERY_INVOKER,
-    ioc.get(DEPS.InteractiveQueryInvoker),
+    new InteractiveQueryInvoker(ioc),
     QueryBase
   )
 })

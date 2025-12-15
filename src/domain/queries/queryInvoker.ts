@@ -1,7 +1,5 @@
 import type { IQuery, IQueryInvoker } from '@/domain/queries/query'
 import { QueryBase } from '@/domain/queries/queryBase'
-import { inject, injectable } from 'inversify'
-import { DEPS } from '@/ui/depIds'
 import type { Container } from 'inversify'
 import { getServiceAsync } from '@/infrastructure/ioc/ioc'
 
@@ -17,9 +15,8 @@ async function getQueriesRegistry(): Promise<Map<Function, string>> {
   return queriesRegistry
 }
 
-@injectable()
 export class QueryInvoker<TResult> implements IQueryInvoker<TResult> {
-  constructor(@inject(DEPS.Container) private readonly container: Container) {}
+  constructor(private readonly ioc: Container) {}
 
   public async exec(query: IQuery<TResult>): Promise<TResult> {
     const proto = Object.getPrototypeOf(query)
@@ -28,7 +25,7 @@ export class QueryInvoker<TResult> implements IQueryInvoker<TResult> {
     const registry = await getQueriesRegistry()
     const storeId = registry.get(proto.constructor)
     if (storeId) {
-      await getServiceAsync(storeId, this.container)
+      await getServiceAsync(storeId, this.ioc)
     }
 
     const action = Reflect.getMetadata(proto, QueryBase)

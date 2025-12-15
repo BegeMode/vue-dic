@@ -1,15 +1,14 @@
 import type { ICommand, ICommandInvoker } from '@/domain/commands/command'
-import { CommandInvoker } from '@/domain/commands/commandInvoker'
+import { COMMAND_INVOKER } from '@/domain/global'
 
 export abstract class CommandBase<TResult> implements ICommand<TResult> {
-  /** Уникальный бренд для номинальной типизации. Каждый наследник должен определить свой уникальный литерал. */
+  /** Unique brand for nominal typing. Each descendant must define its unique literal. */
   abstract readonly __brand: string
   private static _commandInvoker: ICommandInvoker
 
   private static get commandInvoker(): ICommandInvoker {
     if (!CommandBase._commandInvoker) {
-      // inversify not used to be able to create comannds with new operator (e.g. new UserUpdateCommand())
-      CommandBase._commandInvoker = new CommandInvoker()
+      CommandBase._commandInvoker = Reflect.getMetadata(COMMAND_INVOKER, CommandBase) as ICommandInvoker
     }
     return CommandBase._commandInvoker
   }

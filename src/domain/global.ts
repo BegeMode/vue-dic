@@ -1,3 +1,3 @@
 export const QUERY_INVOKER = Symbol.for('QUERY_INVOKER')
-
+export const COMMAND_INVOKER = Symbol.for('COMMAND_INVOKER')
 export const INTERACTIVE_QUERY_INVOKER = Symbol.for('INTERACTIVE_QUERY_INVOKER')

@@ -29,7 +29,6 @@ export const deps = {
   ...appDeps,
   ...infraDeps,
   [DEPS.Logger]: Logger,
-  [DEPS.InteractiveQueryInvoker]: InteractiveQueryInvoker,
   [DEPS.AlertQuery]: queryDynamicImport(
     DEPS.AlertQuery,
     AlertQuery,

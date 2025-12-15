@@ -1,7 +1,5 @@
 import type { ICommand, ICommandInvoker } from '@/domain/commands/command'
 import { CommandBase } from '@/domain/commands/commandBase'
-import { inject, injectable } from 'inversify'
-import { DEPS } from '@/ui/depIds'
 import type { Container } from 'inversify'
 import { getServiceAsync } from '@/infrastructure/ioc/ioc'
 
@@ -17,9 +15,8 @@ async function getCommandsRegistry(): Promise<Map<Function, string>> {
   return commandsRegistry
 }
 
-@injectable()
 export class CommandInvoker<TResult> implements ICommandInvoker<TResult> {
-  constructor(@inject(DEPS.Container) private readonly container: Container) {}
+  constructor(private readonly ioc: Container) {}
 
   public async exec(command: ICommand<TResult>): Promise<TResult> {
     const proto = Object.getPrototypeOf(command)
@@ -28,7 +25,7 @@ export class CommandInvoker<TResult> implements ICommandInvoker<TResult> {
     const registry = await getCommandsRegistry()
     const storeId = registry.get(proto.constructor)
     if (storeId) {
-      await getServiceAsync(storeId, this.container)
+      await getServiceAsync(storeId, this.ioc)
     }
 
     const action = Reflect.getMetadata(proto, CommandBase)

@@ -4,7 +4,6 @@ import { INFRA_DEPS } from '@/infrastructure/depIds'
 
 export const DEPS = {
   ...INFRA_DEPS,
-  InteractiveQueryInvoker: Symbol.for('InteractiveQueryInvoker'),
   AlertQuery: Symbol.for('AlertQuery'),
   ConfirmQuery: Symbol.for('ConfirmQuery'),
   IncrementStepQuery: Symbol.for('IncrementStepQuery'),

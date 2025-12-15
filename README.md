@@ -1,4 +1,4 @@
-# Vue Dictionary - DDD Web Application
+# Vue DIC - DDD & Inversify & CQRS Web Application
 
 Современное веб-приложение на Vue.js 3 с TypeScript, построенное с использованием принципов Domain-Driven Design (DDD), Dependency Injection (DI) и элементов Command Query Responsibility Segregation (CQRS).
 
